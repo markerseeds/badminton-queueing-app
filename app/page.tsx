@@ -125,6 +125,15 @@ export default function BadmintonQueueApp() {
 
   const uuid = () => Math.random().toString(36).substring(2, 11); // safe replacement
 
+  // Helper to shuffle an array
+  const shuffleArray = (array: any[]) => {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  };
+
   // ---------- ACTIONS ----------
   const addPlayer = async () => {
     if (!playerName.trim()) return;
@@ -171,6 +180,25 @@ export default function BadmintonQueueApp() {
   const addToQueue = async (player: Player) => {
     if (isQueued(player)) return;
     await updateSession({ queue: [...state.queue, player] });
+  };
+
+  const autoPickPlayers = async () => {
+    const availablePlayers = state.players.filter(
+      (p) => !isPlaying(p) && !isQueued(p)
+    );
+
+    if (availablePlayers.length < 4) return; // Not enough players to form a game
+
+    // 1. Shuffle the available players
+    const shuffledPlayers = shuffleArray([...availablePlayers]);
+
+    // 2. Pick the first 4
+    const playersToQueue = shuffledPlayers.slice(0, 4);
+
+    // 3. Add them to the existing queue
+    const updatedQueue = [...state.queue, ...playersToQueue];
+
+    await updateSession({ queue: updatedQueue });
   };
 
   const removeFromQueue = async (player: Player) => {
@@ -237,6 +265,10 @@ export default function BadmintonQueueApp() {
   };
 
   // ---------- RENDER ----------
+  const availablePlayersCount = state.players.filter(
+    (p) => !isPlaying(p) && !isQueued(p)
+  ).length;
+
   return (
     <div className="p-6 space-y-6">
       {/* COURTS */}
@@ -323,7 +355,16 @@ export default function BadmintonQueueApp() {
         <Card className="md:col-span-2 p-4">
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">Players</h2>
-            <Button onClick={() => setShowModal(true)}>Add Player</Button>
+            <div className="flex space-x-2">
+              <Button
+                className="bg-green-600"
+                onClick={autoPickPlayers}
+                disabled={availablePlayersCount < 4}
+              >
+                Auto-Pick (4)
+              </Button>
+              <Button onClick={() => setShowModal(true)}>Add Player</Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -357,7 +398,7 @@ export default function BadmintonQueueApp() {
         </Card>
       </div>
 
-      {/* MODAL */}
+      {/* MODAL (omitted for brevity) */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
           <Card className="p-6 w-full max-w-sm">
