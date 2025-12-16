@@ -112,6 +112,10 @@ export default function BadmintonQueueApp() {
   const isPlaying = (player: Player) =>
     state.games.flatMap((g) => g.players).some((p) => p.id === player.id);
 
+  // Check if player is currently in the queue
+  const isQueued = (player: Player) =>
+    state.queue.some((p) => p.id === player.id);
+
   const updateSession = async (updates: Partial<SessionState>) => {
     await updateDoc(sessionRef, {
       ...updates,
@@ -142,8 +146,30 @@ export default function BadmintonQueueApp() {
     setShowModal(false);
   };
 
+  const deletePlayer = async (playerToDelete: Player) => {
+    // 1. Remove player from the main players list
+    const updatedPlayers = state.players.filter(
+      (p) => p.id !== playerToDelete.id
+    );
+
+    // 2. Remove player from the queue if they are in it
+    const updatedQueue = state.queue.filter((p) => p.id !== playerToDelete.id);
+
+    // 3. If the player is currently playing, remove them from the court
+    const updatedGames = state.games.map((game) => ({
+      ...game,
+      players: game.players.filter((p) => p.id !== playerToDelete.id),
+    }));
+
+    await updateSession({
+      players: updatedPlayers,
+      queue: updatedQueue,
+      games: updatedGames,
+    });
+  };
+
   const addToQueue = async (player: Player) => {
-    if (state.queue.some((p) => p.id === player.id)) return;
+    if (isQueued(player)) return;
     await updateSession({ queue: [...state.queue, player] });
   };
 
@@ -202,10 +228,6 @@ export default function BadmintonQueueApp() {
     } else {
       // Remove courts and their players if necessary
       updatedGames = updatedGames.slice(0, newCourts);
-
-      // If any players were on the removed courts, they go back to the list of players
-      // Note: This logic assumes removed players are NOT added to the queue
-      // For a more robust app, you might want to add them to the queue or a separate "waiting" list.
     }
 
     await updateSession({
@@ -252,7 +274,7 @@ export default function BadmintonQueueApp() {
                   </ul>
                   <Button
                     className="mt-3 w-full bg-red-600"
-                    onClick={() => endGame(index)} // Use index for safer array manipulation
+                    onClick={() => endGame(index)}
                   >
                     End Game
                   </Button>
@@ -297,7 +319,7 @@ export default function BadmintonQueueApp() {
           </ul>
         </Card>
 
-        {/* PLAYERS */}
+        {/* PLAYERS (MODIFIED) */}
         <Card className="md:col-span-2 p-4">
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">Players</h2>
@@ -306,11 +328,12 @@ export default function BadmintonQueueApp() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {state.players
-              .filter(
-                (p) => !isPlaying(p) && !state.queue.some((q) => q.id === p.id)
-              ) // Also filter players already in queue
+              .filter((p) => !isPlaying(p) && !isQueued(p)) // Only show available players
               .map((p) => (
-                <Card key={p.id} className="p-3 flex justify-between">
+                <Card
+                  key={p.id}
+                  className="p-3 flex justify-between items-center"
+                >
                   <div>
                     <div>
                       {p.name} ({p.skill})
@@ -319,14 +342,22 @@ export default function BadmintonQueueApp() {
                       Games: {p.gamesPlayed}
                     </div>
                   </div>
-                  <Button onClick={() => addToQueue(p)}>Queue</Button>
+                  <div className="flex space-x-2">
+                    <Button onClick={() => addToQueue(p)}>Queue</Button>
+                    <Button
+                      className="bg-red-600"
+                      onClick={() => deletePlayer(p)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </Card>
               ))}
           </div>
         </Card>
       </div>
 
-      {/* MODAL (omitted for brevity, no changes) */}
+      {/* MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
           <Card className="p-6 w-full max-w-sm">
