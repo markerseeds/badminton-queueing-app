@@ -37,6 +37,7 @@ const Select = (props: any) => (
 const SKILLS = [
   "new",
   "beginner",
+  "upper beginner",
   "intermediate",
   "upper intermediate",
   "advanced",
@@ -116,6 +117,9 @@ export default function BadmintonQueueApp() {
   const isQueued = (player: Player) =>
     state.queue.some((p) => p.id === player.id);
 
+  // Maps skill string to a number for comparison (0 to 5)
+  const getSkillIndex = (skill: string) => SKILLS.indexOf(skill);
+
   const updateSession = async (updates: Partial<SessionState>) => {
     await updateDoc(sessionRef, {
       ...updates,
@@ -125,7 +129,7 @@ export default function BadmintonQueueApp() {
 
   const uuid = () => Math.random().toString(36).substring(2, 11); // safe replacement
 
-  // Helper to shuffle an array
+  // Helper to shuffle an array (used for tie-breaking randomization)
   const shuffleArray = (array: any[]) => {
     for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -183,17 +187,44 @@ export default function BadmintonQueueApp() {
   };
 
   const autoPickPlayers = async () => {
-    const availablePlayers = state.players.filter(
+    let availablePlayers = state.players.filter(
       (p) => !isPlaying(p) && !isQueued(p)
     );
 
-    if (availablePlayers.length < 4) return; // Not enough players to form a game
+    if (availablePlayers.length < 4) return; // Not enough players
 
-    // 1. Shuffle the available players
-    const shuffledPlayers = shuffleArray([...availablePlayers]);
+    // 1. Sort by Games Played (Lowest first) and then shuffle (for fair tie-breaking)
+    availablePlayers.sort((a, b) => a.gamesPlayed - b.gamesPlayed);
+    availablePlayers = shuffleArray(availablePlayers);
 
-    // 2. Pick the first 4
-    const playersToQueue = shuffledPlayers.slice(0, 4);
+    // 2. Find the optimal group of 4
+    let playersToQueue: Player[] = [];
+
+    // Strategy: Look for the first group of 4 consecutive players
+    // (in the gamesPlayed-sorted list) that meet the skill difference criteria.
+    for (let i = 0; i <= availablePlayers.length - 4; i++) {
+      const potentialGroup = availablePlayers.slice(i, i + 4);
+
+      // Find the min and max skill index in the potential group
+      const skillIndices = potentialGroup.map((p) => getSkillIndex(p.skill));
+      const minSkill = Math.min(...skillIndices);
+      const maxSkill = Math.max(...skillIndices);
+
+      // Check the skill difference criteria (max 1 level difference)
+      if (maxSkill - minSkill <= 1) {
+        playersToQueue = potentialGroup;
+        break; // Found the best group of 4 (lowest games played and tight skill level)
+      }
+    }
+
+    if (playersToQueue.length === 0) {
+      // Fallback: If no group of 4 meets the strict skill level, take the 4 players
+      // with the absolute lowest games played, regardless of skill gap.
+      console.warn(
+        "Could not find 4 players within 1 skill level difference. Picking the 4 with the lowest games played."
+      );
+      playersToQueue = availablePlayers.slice(0, 4);
+    }
 
     // 3. Add them to the existing queue
     const updatedQueue = [...state.queue, ...playersToQueue];
@@ -351,7 +382,7 @@ export default function BadmintonQueueApp() {
           </ul>
         </Card>
 
-        {/* PLAYERS (MODIFIED) */}
+        {/* PLAYERS */}
         <Card className="md:col-span-2 p-4">
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">Players</h2>
