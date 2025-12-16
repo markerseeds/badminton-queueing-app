@@ -37,7 +37,6 @@ const Select = (props: any) => (
 const SKILLS = [
   "new",
   "beginner",
-  "upper beginner",
   "intermediate",
   "upper intermediate",
   "advanced",
@@ -302,7 +301,7 @@ export default function BadmintonQueueApp() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* COURTS */}
+      {/* COURTS (omitted for brevity) */}
       <Card className="p-6">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-xl font-semibold">Courts</h1>
@@ -351,7 +350,7 @@ export default function BadmintonQueueApp() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* QUEUE */}
+        {/* QUEUE (MODIFIED) */}
         <Card className="p-4">
           <h2 className="font-semibold mb-3">Queue</h2>
           <Button
@@ -367,12 +366,20 @@ export default function BadmintonQueueApp() {
 
           <ul className="space-y-2">
             {state.queue.map((p, i) => (
-              <li key={p.id} className="flex justify-between items-center">
-                <span>
-                  {i + 1}. {p.name}
-                </span>
+              <li
+                key={p.id}
+                className="flex justify-between items-center bg-gray-50 p-2 rounded-lg"
+              >
+                <div className="flex flex-col text-sm">
+                  <span className="font-medium">
+                    {i + 1}. {p.name}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {p.skill} | Games: {p.gamesPlayed}
+                  </span>
+                </div>
                 <Button
-                  className="bg-gray-600"
+                  className="bg-gray-600 px-2 py-0.5 text-xs"
                   onClick={() => removeFromQueue(p)}
                 >
                   Remove
@@ -382,7 +389,7 @@ export default function BadmintonQueueApp() {
           </ul>
         </Card>
 
-        {/* PLAYERS */}
+        {/* PLAYERS (omitted for brevity) */}
         <Card className="md:col-span-2 p-4">
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">Players</h2>
