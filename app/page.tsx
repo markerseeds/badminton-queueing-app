@@ -33,6 +33,24 @@ const Select = (props: any) => (
   <select {...props} className="border rounded-lg px-2 py-1 w-full" />
 );
 
+// New Confirmation Modal Component
+const ConfirmationModal = ({ message, onConfirm, onCancel }: any) => (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <Card className="p-6 w-full max-w-sm">
+      <h3 className="font-semibold text-lg mb-4">Confirm Action</h3>
+      <p className="text-gray-700 mb-6">{message}</p>
+      <div className="flex justify-end gap-2">
+        <Button className="bg-gray-600" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button className="bg-red-600" onClick={onConfirm}>
+          Confirm
+        </Button>
+      </div>
+    </Card>
+  </div>
+);
+
 // ---------- CONSTANTS ----------
 const SKILLS = [
   "new",
@@ -73,9 +91,14 @@ export default function BadmintonQueueApp() {
 
   const [state, setState] = useState<SessionState | null>(null);
 
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(false); // For Add Player modal
   const [playerName, setPlayerName] = useState("");
   const [skill, setSkill] = useState(SKILLS[0]);
+
+  // Confirmation Modal State
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
 
   // ---------- SUBSCRIBE ----------
   useEffect(() => {
@@ -138,27 +161,9 @@ export default function BadmintonQueueApp() {
   };
 
   // ---------- ACTIONS ----------
-  const addPlayer = async () => {
-    if (!playerName.trim()) return;
 
-    await updateSession({
-      players: [
-        ...state.players,
-        {
-          id: uuid(),
-          name: playerName.trim(),
-          skill,
-          gamesPlayed: 0,
-        },
-      ],
-    });
-
-    setPlayerName("");
-    setSkill(SKILLS[0]);
-    setShowModal(false);
-  };
-
-  const deletePlayer = async (playerToDelete: Player) => {
+  // --- DELETE PLAYER LOGIC ---
+  const executeDeletePlayer = async (playerToDelete: Player) => {
     // 1. Remove player from the main players list
     const updatedPlayers = state.players.filter(
       (p) => p.id !== playerToDelete.id
@@ -180,6 +185,50 @@ export default function BadmintonQueueApp() {
     });
   };
 
+  const confirmDeletePlayer = (player: Player) => {
+    setConfirmMessage(
+      `Are you sure you want to delete player: ${player.name}? This cannot be undone.`
+    );
+    setConfirmAction(() => () => executeDeletePlayer(player));
+    setShowConfirmModal(true);
+  };
+
+  // --- END GAME LOGIC ---
+  const executeEndGame = async (courtIndex: number) => {
+    const updatedGames = [...state.games];
+    updatedGames[courtIndex] = { ...updatedGames[courtIndex], players: [] };
+    await updateSession({ games: updatedGames });
+  };
+
+  const confirmEndGame = (courtNumber: number, courtIndex: number) => {
+    setConfirmMessage(
+      `Are you sure you want to end the game on Court ${courtNumber}? The players will return to the available list.`
+    );
+    setConfirmAction(() => () => executeEndGame(courtIndex));
+    setShowConfirmModal(true);
+  };
+
+  // --- GENERAL ACTIONS (No confirmation needed) ---
+  const addPlayer = async () => {
+    if (!playerName.trim()) return;
+
+    await updateSession({
+      players: [
+        ...state.players,
+        {
+          id: uuid(),
+          name: playerName.trim(),
+          skill,
+          gamesPlayed: 0,
+        },
+      ],
+    });
+
+    setPlayerName("");
+    setSkill(SKILLS[0]);
+    setShowModal(false);
+  };
+
   const addToQueue = async (player: Player) => {
     if (isQueued(player)) return;
     await updateSession({ queue: [...state.queue, player] });
@@ -190,7 +239,7 @@ export default function BadmintonQueueApp() {
       (p) => !isPlaying(p) && !isQueued(p)
     );
 
-    if (availablePlayers.length < 4) return; // Not enough players
+    if (availablePlayers.length < 4) return;
 
     // 1. Sort by Games Played (Lowest first) and then shuffle (for fair tie-breaking)
     availablePlayers.sort((a, b) => a.gamesPlayed - b.gamesPlayed);
@@ -199,30 +248,23 @@ export default function BadmintonQueueApp() {
     // 2. Find the optimal group of 4
     let playersToQueue: Player[] = [];
 
-    // Strategy: Look for the first group of 4 consecutive players
-    // (in the gamesPlayed-sorted list) that meet the skill difference criteria.
     for (let i = 0; i <= availablePlayers.length - 4; i++) {
       const potentialGroup = availablePlayers.slice(i, i + 4);
-
-      // Find the min and max skill index in the potential group
       const skillIndices = potentialGroup.map((p) => getSkillIndex(p.skill));
       const minSkill = Math.min(...skillIndices);
       const maxSkill = Math.max(...skillIndices);
 
-      // Check the skill difference criteria (max 1 level difference)
       if (maxSkill - minSkill <= 1) {
         playersToQueue = potentialGroup;
-        break; // Found the best group of 4 (lowest games played and tight skill level)
+        break;
       }
     }
 
     if (playersToQueue.length === 0) {
-      // Fallback: If no group of 4 meets the strict skill level, take the 4 players
-      // with the absolute lowest games played, regardless of skill gap.
+      playersToQueue = availablePlayers.slice(0, 4);
       console.warn(
         "Could not find 4 players within 1 skill level difference. Picking the 4 with the lowest games played."
       );
-      playersToQueue = availablePlayers.slice(0, 4);
     }
 
     // 3. Add them to the existing queue
@@ -264,12 +306,6 @@ export default function BadmintonQueueApp() {
     });
   };
 
-  const endGame = async (courtIndex: number) => {
-    const updatedGames = [...state.games];
-    updatedGames[courtIndex] = { ...updatedGames[courtIndex], players: [] };
-    await updateSession({ games: updatedGames });
-  };
-
   const changeCourts = async (newCourts: number) => {
     if (newCourts === state.courts) return;
 
@@ -294,6 +330,19 @@ export default function BadmintonQueueApp() {
     });
   };
 
+  const handleConfirm = () => {
+    if (confirmAction) {
+      confirmAction();
+    }
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+  };
+
+  const handleCancel = () => {
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+  };
+
   // ---------- RENDER ----------
   const availablePlayersCount = state.players.filter(
     (p) => !isPlaying(p) && !isQueued(p)
@@ -301,7 +350,7 @@ export default function BadmintonQueueApp() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* COURTS (omitted for brevity) */}
+      {/* COURTS */}
       <Card className="p-6">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-xl font-semibold">Courts</h1>
@@ -336,7 +385,7 @@ export default function BadmintonQueueApp() {
                   </ul>
                   <Button
                     className="mt-3 w-full bg-red-600"
-                    onClick={() => endGame(index)}
+                    onClick={() => confirmEndGame(game.court, index)} // Use confirmEndGame
                   >
                     End Game
                   </Button>
@@ -350,7 +399,7 @@ export default function BadmintonQueueApp() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* QUEUE (MODIFIED) */}
+        {/* QUEUE */}
         <Card className="p-4">
           <h2 className="font-semibold mb-3">Queue</h2>
           <Button
@@ -389,7 +438,7 @@ export default function BadmintonQueueApp() {
           </ul>
         </Card>
 
-        {/* PLAYERS (omitted for brevity) */}
+        {/* PLAYERS */}
         <Card className="md:col-span-2 p-4">
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">Players</h2>
@@ -425,7 +474,7 @@ export default function BadmintonQueueApp() {
                     <Button onClick={() => addToQueue(p)}>Queue</Button>
                     <Button
                       className="bg-red-600"
-                      onClick={() => deletePlayer(p)}
+                      onClick={() => confirmDeletePlayer(p)} // Use confirmDeletePlayer
                     >
                       Delete
                     </Button>
@@ -436,9 +485,9 @@ export default function BadmintonQueueApp() {
         </Card>
       </div>
 
-      {/* MODAL (omitted for brevity) */}
+      {/* ADD PLAYER MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
           <Card className="p-6 w-full max-w-sm">
             <h3 className="font-semibold mb-4">Add Player</h3>
             <Input
@@ -467,6 +516,15 @@ export default function BadmintonQueueApp() {
             </div>
           </Card>
         </div>
+      )}
+
+      {/* CONFIRMATION MODAL */}
+      {showConfirmModal && (
+        <ConfirmationModal
+          message={confirmMessage}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
       )}
     </div>
   );
