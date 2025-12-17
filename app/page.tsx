@@ -100,6 +100,14 @@ export default function BadmintonQueueApp() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
 
+  // Batch Add Modal State
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchInput, setBatchInput] = useState("");
+  const [batchError, setBatchError] = useState<string | null>(null);
+
+  // Dropdown State
+  const [showDropdown, setShowDropdown] = useState(false);
+
   // ---------- SUBSCRIBE ----------
   useEffect(() => {
     const unsub = onSnapshot(sessionRef, async (snap) => {
@@ -330,6 +338,68 @@ export default function BadmintonQueueApp() {
     });
   };
 
+  // --- BATCH ADD PLAYERS LOGIC ---
+  const batchAddPlayers = async () => {
+    setBatchError(null);
+    const lines = batchInput.split("\n").filter((line) => line.trim() !== "");
+    const newPlayers: Player[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const [name, skill] = lines[i].split(",").map((item) => item.trim());
+
+      // Validation: Check format
+      if (!name || !skill) {
+        setBatchError(`Line ${i + 1}: Format must be "Name, Skill"`);
+        return;
+      }
+
+      // Validation: Check skill against SKILLS array
+      const formattedSkill = skill.toLowerCase();
+      if (!SKILLS.includes(formattedSkill)) {
+        setBatchError(`Line ${i + 1}: "${skill}" is not a valid skill level.`);
+        return;
+      }
+
+      newPlayers.push({
+        id: uuid(),
+        name: name,
+        skill: formattedSkill,
+        gamesPlayed: 0,
+      });
+    }
+
+    if (newPlayers.length > 0) {
+      await updateSession({
+        players: [...state.players, ...newPlayers],
+      });
+      setBatchInput("");
+      setShowBatchModal(false);
+    }
+  };
+
+  // --- DELETE ALL LOGIC ---
+  const executeDeleteAll = async () => {
+    // Reset everything to empty/initial state
+    const resetGames = state.games.map((game) => ({
+      ...game,
+      players: [],
+    }));
+
+    await updateSession({
+      players: [],
+      queue: [],
+      games: resetGames,
+    });
+  };
+
+  const confirmDeleteAll = () => {
+    setConfirmMessage(
+      "DANGER: Are you sure you want to delete ALL players and clear all courts? This action cannot be undone."
+    );
+    setConfirmAction(() => () => executeDeleteAll());
+    setShowConfirmModal(true);
+  };
+
   const handleConfirm = () => {
     if (confirmAction) {
       confirmAction();
@@ -450,7 +520,68 @@ export default function BadmintonQueueApp() {
               >
                 Auto-Pick (4)
               </Button>
-              <Button onClick={() => setShowModal(true)}>Add Player</Button>
+              <Button onClick={() => setShowModal(true)}>Add</Button>
+              {/* DROPDOWN MENU */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowDropdown(!showDropdown)}
+                  className="bg-black text-white p-2 rounded-lg hover:opacity-80 flex items-center justify-center transition-colors"
+                >
+                  {/* Icon representing your uploaded image */}
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`transition-transform duration-200 ${
+                      showDropdown ? "rotate-180" : ""
+                    }`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+
+                {showDropdown && (
+                  <>
+                    {/* Invisible backdrop to close dropdown when clicking outside */}
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowDropdown(false)}
+                    />
+
+                    <Card className="absolute right-0 mt-2 w-48 shadow-xl z-20 overflow-hidden border-gray-200">
+                      <div className="flex flex-col py-1">
+                        <button
+                          className="px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                          onClick={() => {
+                            setShowBatchModal(true);
+                            setShowDropdown(false);
+                          }}
+                        >
+                          <span className="text-blue-600">⊕</span> Batch Add
+                          Players
+                        </button>
+
+                        <div className="border-t border-gray-100 my-1" />
+
+                        <button
+                          className="px-4 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
+                          onClick={() => {
+                            confirmDeleteAll();
+                            setShowDropdown(false);
+                          }}
+                        >
+                          <span>🗑</span> Delete All Players
+                        </button>
+                      </div>
+                    </Card>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -527,6 +658,50 @@ export default function BadmintonQueueApp() {
           onConfirm={handleConfirm}
           onCancel={handleCancel}
         />
+      )}
+
+      {showBatchModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
+          <Card className="p-6 w-full max-w-lg">
+            <h3 className="font-semibold mb-2">Batch Add Players</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Format: Name, Skill (One per line)
+              <br />
+              Example: Mark, new
+            </p>
+
+            <textarea
+              className="border rounded-lg px-2 py-2 w-full h-48 font-mono text-sm"
+              placeholder={`John, new
+James, beginner
+Charlie, intermediate`}
+              value={batchInput}
+              onChange={(e) => setBatchInput(e.target.value)}
+            />
+
+            {batchError && (
+              <div className="mt-2 text-red-600 text-sm font-medium">
+                ⚠️ {batchError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-4">
+              <Button
+                className="bg-gray-600"
+                onClick={() => {
+                  setShowBatchModal(false);
+                  setBatchError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={batchAddPlayers}>
+                Import {batchInput.split("\n").filter((l) => l.trim()).length}{" "}
+                Players
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );
