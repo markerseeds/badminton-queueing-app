@@ -562,7 +562,7 @@ export default function BadmintonQueueApp() {
                             setShowDropdown(false);
                           }}
                         >
-                          <span className="text-blue-600">⊕</span> Batch Add
+                          <span className="text-blue-600">📝</span> Batch Add
                           Players
                         </button>
 
@@ -575,7 +575,7 @@ export default function BadmintonQueueApp() {
                             setShowDropdown(false);
                           }}
                         >
-                          <span>🗑</span> Delete All Players
+                          <span>🗑️</span> Delete All Players
                         </button>
                       </div>
                     </Card>
