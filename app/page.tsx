@@ -490,20 +490,22 @@ export default function BadmintonQueueApp() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
           <Card className="p-6 w-full max-w-sm">
             <h3 className="font-semibold mb-4">Add Player</h3>
-            <Input
-              placeholder="Name"
-              value={playerName}
-              onChange={(e: any) => setPlayerName(e.target.value)}
-            />
-            <Select
-              className="mt-3"
-              value={skill}
-              onChange={(e: any) => setSkill(e.target.value)}
-            >
-              {SKILLS.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </Select>
+            <div className="flex flex-col justify-between gap-2 mt-4">
+              <Input
+                placeholder="Name"
+                value={playerName}
+                onChange={(e: any) => setPlayerName(e.target.value)}
+              />
+              <Select
+                className="mt-3"
+                value={skill}
+                onChange={(e: any) => setSkill(e.target.value)}
+              >
+                {SKILLS.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </Select>
+            </div>
 
             <div className="flex justify-end gap-2 mt-4">
               <Button
