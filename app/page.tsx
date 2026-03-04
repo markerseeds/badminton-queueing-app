@@ -119,7 +119,7 @@ export default function BadmintonQueueApp() {
           (_, i) => ({
             court: i + 1,
             players: [],
-          })
+          }),
         );
 
         await setDoc(sessionRef, {
@@ -174,7 +174,7 @@ export default function BadmintonQueueApp() {
   const executeDeletePlayer = async (playerToDelete: Player) => {
     // 1. Remove player from the main players list
     const updatedPlayers = state.players.filter(
-      (p) => p.id !== playerToDelete.id
+      (p) => p.id !== playerToDelete.id,
     );
 
     // 2. Remove player from the queue if they are in it
@@ -195,7 +195,7 @@ export default function BadmintonQueueApp() {
 
   const confirmDeletePlayer = (player: Player) => {
     setConfirmMessage(
-      `Are you sure you want to delete player: ${player.name}? This cannot be undone.`
+      `Are you sure you want to delete player: ${player.name}? This cannot be undone.`,
     );
     setConfirmAction(() => () => executeDeletePlayer(player));
     setShowConfirmModal(true);
@@ -210,7 +210,7 @@ export default function BadmintonQueueApp() {
 
   const confirmEndGame = (courtNumber: number, courtIndex: number) => {
     setConfirmMessage(
-      `Are you sure you want to end the game on Court ${courtNumber}? The players will return to the available list.`
+      `Are you sure you want to end the game on Court ${courtNumber}? The players will return to the available list.`,
     );
     setConfirmAction(() => () => executeEndGame(courtIndex));
     setShowConfirmModal(true);
@@ -244,7 +244,7 @@ export default function BadmintonQueueApp() {
 
   const autoPickPlayers = async () => {
     let availablePlayers = state.players.filter(
-      (p) => !isPlaying(p) && !isQueued(p)
+      (p) => !isPlaying(p) && !isQueued(p),
     );
 
     if (availablePlayers.length < 4) return;
@@ -271,7 +271,7 @@ export default function BadmintonQueueApp() {
     if (playersToQueue.length === 0) {
       playersToQueue = availablePlayers.slice(0, 4);
       console.warn(
-        "Could not find 4 players within 1 skill level difference. Picking the 4 with the lowest games played."
+        "Could not find 4 players within 1 skill level difference. Picking the 4 with the lowest games played.",
       );
     }
 
@@ -289,7 +289,7 @@ export default function BadmintonQueueApp() {
 
   const startGame = async () => {
     const emptyCourtIndex = state.games.findIndex(
-      (g) => g.players.length === 0
+      (g) => g.players.length === 0,
     );
     if (emptyCourtIndex === -1 || state.queue.length < 4) return;
 
@@ -298,7 +298,7 @@ export default function BadmintonQueueApp() {
     const updatedPlayers = state.players.map((p) =>
       playersForGame.some((gp) => gp.id === p.id)
         ? { ...p, gamesPlayed: p.gamesPlayed + 1 }
-        : p
+        : p,
     );
 
     const updatedGames = [...state.games];
@@ -411,9 +411,39 @@ export default function BadmintonQueueApp() {
     await updateSession({ queue: updatedQueue });
   };
 
+  // --- EDIT GAMES PLAYED ---
+  const updateGamesPlayed = async (playerId: string, newValue: number) => {
+    // Ensure we don't save NaN
+    const val = isNaN(newValue) ? 0 : newValue;
+
+    // 1. Update in the main players list
+    const updatedPlayers = state.players.map((p) =>
+      p.id === playerId ? { ...p, gamesPlayed: val } : p,
+    );
+
+    // 2. Update in the queue (if they are there)
+    const updatedQueue = state.queue.map((p) =>
+      p.id === playerId ? { ...p, gamesPlayed: val } : p,
+    );
+
+    // 3. Update in active games (if they are currently playing)
+    const updatedGames = state.games.map((game) => ({
+      ...game,
+      players: game.players.map((p) =>
+        p.id === playerId ? { ...p, gamesPlayed: val } : p,
+      ),
+    }));
+
+    await updateSession({
+      players: updatedPlayers,
+      queue: updatedQueue,
+      games: updatedGames,
+    });
+  };
+
   const confirmDeleteAll = () => {
     setConfirmMessage(
-      "DANGER: Are you sure you want to delete ALL players and clear all courts? This action cannot be undone."
+      "DANGER: Are you sure you want to delete ALL players and clear all courts? This action cannot be undone.",
     );
     setConfirmAction(() => () => executeDeleteAll());
     setShowConfirmModal(true);
@@ -434,7 +464,7 @@ export default function BadmintonQueueApp() {
 
   // ---------- RENDER ----------
   const availablePlayersCount = state.players.filter(
-    (p) => !isPlaying(p) && !isQueued(p)
+    (p) => !isPlaying(p) && !isQueued(p),
   ).length;
 
   return (
@@ -569,8 +599,8 @@ export default function BadmintonQueueApp() {
                   i < 2
                     ? "bg-blue-50 border border-blue-100" // If i < 2 (Team 1)
                     : i < 4
-                    ? "bg-red-50 border border-red-100" // Else if i < 4 (Team 2)
-                    : "bg-gray-50" // Else (Rest of Queue)
+                      ? "bg-red-50 border border-red-100" // Else if i < 4 (Team 2)
+                      : "bg-gray-50" // Else (Rest of Queue)
                 }`}
               >
                 <div className="flex flex-col text-sm">
@@ -690,8 +720,44 @@ export default function BadmintonQueueApp() {
                     <div>
                       {p.name} ({p.skill})
                     </div>
-                    <div className="text-xs text-gray-500">
-                      Games: {p.gamesPlayed}
+                    <div className="flex items-center mt-2">
+                      <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50 h-7">
+                        {/* Minus Button */}
+                        <button
+                          className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-r border-gray-200 font-medium"
+                          onClick={() =>
+                            updateGamesPlayed(p.id, p.gamesPlayed - 1)
+                          }
+                        >
+                          −
+                        </button>
+
+                        {/* Number Input */}
+                        <input
+                          type="number"
+                          className="w-8 h-full text-center text-xs font-semibold bg-transparent focus:outline-none"
+                          value={p.gamesPlayed}
+                          onChange={(e) =>
+                            updateGamesPlayed(
+                              p.id,
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                        />
+
+                        {/* Plus Button */}
+                        <button
+                          className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-l border-gray-200 font-medium"
+                          onClick={() =>
+                            updateGamesPlayed(p.id, p.gamesPlayed + 1)
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
+                      <span className="ml-2 text-[10px] uppercase font-bold text-gray-400 tracking-tight">
+                        Games
+                      </span>
                     </div>
                   </div>
                   <div className="flex space-x-2">
