@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Badminton Queue
 
-## Getting Started
+A real-time badminton court queueing tool for club nights. An organizer adds
+players (each with a skill level), sets the number of courts (1–6), and builds a
+queue. The app auto-picks fair, skill-matched groups of four — fewest games
+played first, kept within one skill band — and syncs live across every device
+looking at the same room.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Auto-pick** balanced groups of four (fewest games first, one skill band).
+- **Live sync** across devices in real time.
+- **Queue management** — add/remove players, shuffle the front four into new teams.
+- **Court board** — Team 1 vs Team 2 per court, start/end games.
+- **Batch add** players ("Name, Skill" per line) and delete-all with confirmation.
+- **Per-player games-played** tracking with quick steppers.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- [Next.js](https://nextjs.org) (App Router) + React + TypeScript
+- [Tailwind CSS](https://tailwindcss.com) v4
+- [Supabase](https://supabase.com) — Postgres, Realtime, and Row-Level Security
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Getting started
 
-## Learn More
+1. **Install dependencies**
 
-To learn more about Next.js, take a look at the following resources:
+   ```bash
+   npm install
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2. **Configure Supabase**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   Copy the example env file and fill in your project's URL and anon key
+   (Supabase dashboard → Project Settings → API):
 
-## Deploy on Vercel
+   ```bash
+   cp .env.local.example .env.local
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   Both values are public identifiers; Row-Level Security is what protects the
+   data. Never put the `service_role` key in a `NEXT_PUBLIC_*` variable.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Run the dev server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000), create a room, and share
+   the room link with your club.
+
+## Scripts
+
+| Command         | Description                 |
+| --------------- | --------------------------- |
+| `npm run dev`   | Start the dev server        |
+| `npm run build` | Production build            |
+| `npm run start` | Build then start production |
+| `npm run lint`  | Run ESLint                  |
+
+## Roadmap
+
+Product direction, phases, and open decisions live in [ROADMAP.md](ROADMAP.md).

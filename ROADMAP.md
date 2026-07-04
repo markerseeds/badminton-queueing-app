@@ -1,0 +1,349 @@
+# Badminton Queue — Product Roadmap
+
+> **Living document.** This is the single source of truth for turning this app from a personal
+> tool into a commercial, professional product with a free tier and a one-time paid unlock.
+> Update the **Status** columns as you go. Add notes, dates, and decisions at the bottom.
+>
+> **Chosen backend:** migrating from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
+> + Row-Level Security). _Decision made 2026-07-03._
+>
+> _Last reviewed: 2026-07-03_
+
+---
+
+## How to use this doc
+
+Phases are ordered by **dependency**, not just priority — each one unlocks the next. They're
+sized for **solo, nights-and-weekends** work, so effort is given in rough "weekend" units. Every
+phase has a goal, a scope, and a **"Done when"** checklist so you always know when to move on.
+
+Don't try to do it all at once. **Phases 0–2 are the ones that actually block commercialization**
+(clean base → Supabase + isolated sessions → accounts) — everything else is easier once those land.
+
+---
+
+## 1. Where the app is today
+
+**Current stack:** Next.js 16, React 19, Firebase Firestore, Tailwind CSS 4. (`framer-motion` is
+installed but unused — drop it or use it.)
+
+**Target stack (migrating to):** Next.js + React (unchanged), **Supabase** for the database
+(Postgres), authentication, real-time sync, and row-level authorization, Tailwind for UI.
+
+**What it does:** One live "room" where an organizer adds players (with a skill level), sets 1–6
+courts, builds a queue, and auto-picks fair, skill-matched groups of 4. It tracks games played,
+supports batch-add, shuffle-teams, delete-all, and syncs in real time across devices.
+
+**What's genuinely good:**
+
+- Real-time multi-device sync already works — Supabase Realtime will replace the Firestore
+  `onSnapshot` subscription without changing this behaviour for users.
+- The auto-pick logic is thoughtful — fewest games played first, then keeps the four players within
+  one skill band, with a sensible fallback. **This logic is DB-agnostic and carries over as-is.**
+- Confirmation modals on destructive actions; clean Tailwind UI; batch import.
+
+**The core limitation:** it's built as a **single, shared room for one club** (`sessionId` is
+hardcoded). That single decision is what stands between you and a commercial product, and it's the
+spine of this roadmap. The move to Supabase is the moment we fix it — by designing a proper
+multi-tenant schema from the start.
+
+---
+
+## 2. Audit findings
+
+Grouped by severity. Locations reference the current `app/page.tsx` unless noted. Each item notes
+**→ how the plan fixes it** (most map to the Supabase migration).
+
+### 🔴 Critical — these block commercialization outright
+
+| # | Finding | Where | Why it matters → Fix |
+|---|---------|-------|----------------------|
+| C1 | **Every user shares ONE session.** `sessionId` is hardcoded to `"club-session-1"`. | `page.tsx:89` | Any two clubs read/write the **same** row and overwrite each other. → **Phase 1**: multi-tenant Supabase schema (`sessions` table) + shareable codes. |
+| C2 | **No database security rules.** No `firestore.rules` exists. | repo (verified absent) | The DB is currently unprotected. → **Phases 1–2**: **Supabase Row-Level Security (RLS)** scoped first to session, then to authenticated owner. RLS replaces Firestore rules and is more powerful. |
+| C3 | **No authentication.** No concept of a user. | whole app | Can't identify who paid or who owns what. → **Phase 2**: **Supabase Auth** (built in — no separate provider needed). |
+| C4 | **No payment or entitlement layer.** | — | Nothing to sell or gate yet. → **Phase 3**: `entitlements`/`plan` in Postgres + a webhook (Supabase Edge Function). |
+
+> **Note on public keys:** exposing Firebase's `apiKey` today — and Supabase's `anon` key after the
+> migration — is **normal and expected**. Both are public identifiers, not secrets; the real
+> protection is **RLS + Auth**, which is exactly what we're adding. Don't waste time "hiding" keys.
+
+### 🟠 High — will bite you as soon as you have real, concurrent users
+
+| # | Finding | Where | Why it matters → Fix |
+|---|---------|-------|----------------------|
+| H1 | **Read-modify-write on the whole document.** Every action rebuilds the full `players`/`queue`/`games` arrays from local state and writes them back. | via `updateSession` | Two organizers acting at once = **lost updates**. → **Largely resolved by Phase 1**: with relational rows you mutate specific records, and Postgres handles concurrency with row locking / transactions. |
+| H2 | **Everything lives in one growing document.** | data model | Firestore's 1 MiB doc limit; every write re-sends the whole doc. → **Resolved by Phase 1**: separate `sessions` / `players` / `games` tables, no document-size ceiling. |
+| H3 | **Config is hardcoded, not env-driven.** No `process.env` usage. | `firebase.ts` | Blocks clean dev/prod split. → **Phase 0**: move Supabase URL + anon key to `NEXT_PUBLIC_*` env vars. |
+
+### 🟡 Medium — quality and maintainability
+
+| # | Finding | Where | Why it matters → Fix |
+|---|---------|-------|----------------------|
+| M1 | **No error handling on any DB call.** | all writes | Failures are silent; the organizer thinks it saved. → **Phase 0**: try/catch + a small toast. Applies equally to Supabase calls. |
+| M2 | **IDs use `Math.random`** (9-char base36). | `page.tsx:160` | Collision-prone. → **Resolved by Phase 1**: Postgres generates keys (`uuid default gen_random_uuid()`). |
+| M3 | **`useEffect` missing-dependency warning** (`sessionRef`). | `page.tsx:138` | Benign now, a footgun once the session ID is dynamic. → **Phase 0** during refactor. |
+| M4 | **Monolithic 867-line `page.tsx`.** | `page.tsx` | UI, state, logic, and data access all in one component. → **Phase 0**: split into components, `types.ts`, a `useSession` hook, and a **data-access service module** (this makes the Supabase swap a near drop-in). |
+| M5 | **No match results / history / scores.** | data model | Limits your best paid features. → **Phase 4**, made easy by the relational schema. |
+| M6 | **No persistent roster.** "Delete All" wipes everything. | app | Clubs re-enter the same people weekly. → **Phase 4** (a `players` table tied to the owner makes this trivial). |
+
+### ⚪ Low — polish for a professional launch
+
+- **Metadata:** description is still `"Generated by create next app"`; README is the default template. Set real title/description/OG tags.
+- **Dark-mode bug:** `globals.css` defines dark background vars, but `body` forces black text and cards are `bg-white` — broken in dark mode. Fix or disable.
+- **Accessibility:** emoji-as-icons, low-contrast text, missing `aria-label`s, unlabeled number input. Do an a11y pass before launch.
+- **No landing / pricing pages** — the app boots straight into the tool (Phase 4).
+- **No tests, CI, analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable).
+
+**Verification run:** `tsc --noEmit` passes clean; `eslint` reports only the one `useEffect`
+warning (M3); no security-rules file found; no `process.env` usage; `framer-motion` confirmed unused.
+
+---
+
+## 3. Product & monetization strategy
+
+### The model
+
+**Free tier + one-time paid "Pro" unlock.** You've chosen a one-time purchase to lower the barrier
+and attract users — a reasonable launch strategy for an indie tool.
+
+**One honest caveat to keep in view (not to act on yet):** a one-time price earns revenue *once*,
+but cloud costs recur *forever* per retained user. At small scale this is a non-issue — Supabase's
+free tier will likely cover you. Two cheap insurance policies for later:
+
+1. **Keep the free tier genuinely limited** so free users stay cheap to serve.
+2. **Store the plan as a field** (`plan: "free" | "pro"`), *not* a boolean — so a future
+   subscription or team tier needs no migration.
+
+> **Supabase free-tier reality check:** 500 MB database, 50k monthly active auth users, 200
+> concurrent realtime connections, 2M realtime messages/month — ample for early clubs. **Gotcha:**
+> free projects **pause after ~1 week of inactivity**, so once you have real users you'll want the
+> $25/mo Pro plan (or a scheduled keep-alive ping). Budget for that around launch.
+
+### Who pays
+
+The **organizer / session host** pays. Players never need an account — they just watch the screen
+or open a shared room. Keep player-side friction at zero.
+
+### Recommended free vs Pro split
+
+Free should be enough to run *one small club night* and fall in love. Pro should be what a *regular*
+organizer needs.
+
+| Capability | Free | Pro (one-time) |
+|---|:---:|:---:|
+| Core queue + auto-pick | ✅ | ✅ |
+| Courts | up to 2 | unlimited (up to 6+) |
+| Players per session | ~16 | unlimited |
+| Saved sessions | 1 | multiple / named |
+| Persistent player roster (reuse weekly) | — | ✅ |
+| Match history & score tracking | — | ✅ |
+| Stats (games played, fairness, win/loss) | basic | full |
+| Courtside "TV mode" big-screen display | — | ✅ |
+| CSV export | — | ✅ |
+| Custom skill labels / club name | — | ✅ |
+
+_(Exact limits are a starting point — validate against how real clubs use it.)_
+
+### Pricing
+
+A one-time unlock in the **~$20–40** range (adjust for region) is a sensible starting hypothesis.
+Consider a lower **founder's price** at launch to seed reviews. Keep it simple: **one unlock per
+account.** Treat the number as a hypothesis to test.
+
+### Payment mechanics (Supabase-native)
+
+- **Recommended: a merchant-of-record** — **Lemon Squeezy** or **Paddle** — so global sales tax /
+  VAT is handled for you (a real burden lifted off a solo developer).
+- **Alternative:** **Stripe Checkout** (one-time mode) — more control, but you own tax compliance.
+- **Flow:** checkout succeeds → provider webhook hits a **Supabase Edge Function** → the function
+  (using the service-role key) sets `plan: "pro"` on the user's row / `entitlements` table → the
+  client reads the entitlement via RLS-protected query and unlocks features. Refunds flip it back to
+  `free`. Nice bonus: the webhook lives on the same platform as your DB.
+
+---
+
+## 4. The roadmap
+
+**Status legend:** ⬜ Not started · 🟨 In progress · ✅ Done
+**Effort:** rough "weekend" units for solo, part-time work.
+
+---
+
+### Phase 0 — Foundations & safety `⬜`  *(DB-agnostic — do first)*
+
+**Goal:** clean up the current app so the Supabase migration is a smooth swap, not a rewrite.
+
+**Scope**
+
+- **Refactor** `page.tsx` into components (`Court`, `Queue`, `PlayerList`, modals), a `types.ts`, a
+  `useSession` hook, and — most important — a **single data-access service module** that wraps every
+  read/write. Migrating to Supabase then means changing *one* module, not the whole app (M4).
+- Add **error handling + a small toast** around every data write (M1).
+- Fix the **`useEffect` dependency** warning (M3).
+- Move config to **env vars** (`NEXT_PUBLIC_*`) (H3).
+- Housekeeping: real **metadata**, rewrite the **README**, fix the **dark-mode** conflict, remove
+  unused **framer-motion**.
+- **Security note:** since this is a new, not-yet-public app, don't invest in hardening the current
+  Firestore — just keep it private until Phase 1. (If you *do* expose it before migrating, add a
+  temporary locked-down rule.)
+
+**Done when:** all data access goes through one service module; writes fail gracefully with user
+feedback; no config inline; app builds clean.
+
+**Effort:** ~2 weekends.
+
+---
+
+### Phase 1 — Migrate to Supabase + multi-tenant schema `⬜`  *(the critical unlock)*
+
+**Goal:** move onto Supabase **and** fix the single-shared-session problem in one move, by designing
+the schema multi-tenant from day one. Fixes **C1, H1, H2** together.
+
+**Scope**
+
+- Stand up a **Supabase project**; add the client SDK; wire the anon key via env.
+- Design the **relational schema**, multi-tenant from the start:
+  - `sessions` (id, share_code, courts, owner_id [nullable until Phase 2], created_at)
+  - `players` (id, session_id → sessions, name, skill, games_played)
+  - `games` / `court_state` (id, session_id, court_no, player_ids / positions)
+  - (roster/results tables come later)
+- Point the **Phase 0 data-access module** at Supabase; replace the `onSnapshot` subscription with a
+  **Supabase Realtime** subscription on the session's rows.
+- **Shareable rooms via code/URL** (e.g. `/s/ABC123`) — no login required yet. Create a room, share
+  the link, everyone who opens it joins the same live room.
+- Turn on **Row-Level Security** with an initial policy scoped to the session/share-code.
+- Migrate the auto-pick, queue, and games logic unchanged (it's pure client logic).
+
+**Done when:** two browsers with different codes have fully independent, real-time state; the global
+`club-session-1` doc is gone; RLS is on; the app runs entirely on Supabase.
+
+**Effort:** ~3–4 weekends (the biggest phase — new schema + realtime + routing).
+
+---
+
+### Phase 2 — Accounts & ownership `⬜`
+
+**Goal:** organizers get a persistent identity so data and entitlements attach to them (C3), and
+RLS can enforce real ownership (C2).
+
+**Scope**
+
+- Add **Supabase Auth** (email magic-link and/or Google — lowest friction). Support anonymous →
+  account upgrade so people can try before signing up.
+- Set `sessions.owner_id` on creation; add a **"My sessions"** list.
+- Tighten **RLS**: owners manage their sessions; shared-code users operate or view-only (decide the
+  role model).
+
+**Done when:** a user signs in, creates and saves multiple sessions tied to their account, and RLS
+stops anyone editing sessions they don't own.
+
+**Effort:** ~2 weekends (Supabase Auth + RLS does most of the heavy lifting).
+
+---
+
+### Phase 3 — Free vs Paid + payments `⬜`
+
+**Goal:** actually sell the Pro unlock (C4).
+
+**Scope**
+
+- **Entitlement model:** a `plan` column (or `entitlements` table) on the user, read via
+  RLS-protected query to gate features (a field, not a boolean — future-proofing).
+- Build the **feature gates** for the split in §3 (court/player limits, multiple sessions, etc.).
+- **Checkout:** Lemon Squeezy / Paddle (recommended) or Stripe; a **Supabase Edge Function** webhook
+  verifies the purchase and sets `plan: "pro"`.
+- Handle **restore / verify** across devices and **refunds** (flip back to free).
+- Add a **pricing page** and upgrade CTAs at each gate.
+
+**Done when:** a test purchase flips the account to Pro and unlocks features; free limits are
+enforced; the entitlement survives refresh and works across devices.
+
+**Effort:** ~3 weekends.
+
+---
+
+### Phase 4 — Make it feel professional `⬜`
+
+**Goal:** the things that make strangers trust it, enjoy it, and tell other clubs.
+
+**Scope**
+
+- **Landing page** (what it is, screenshots, pricing, FAQ), proper metadata/OG, favicon, real name.
+- **Onboarding**, empty states, optional sample data.
+- **Courtside "TV mode"** — big-screen view of courts + who's up next _(Pro)_.
+- **Match history + score tracking + basic stats** _(Pro)_ — add results tables (M5).
+- **Persistent roster** — save players between nights _(Pro)_ (M6).
+- **CSV export** _(Pro)_.
+- **PWA + offline resilience**, mobile-layout polish, the **dark-mode fix**, an **a11y pass**.
+
+**Done when:** a brand-new user lands, understands it, runs a full club night on their phone, and the
+Pro features are genuinely worth paying for.
+
+**Effort:** ongoing — sequence by feedback. ~4–6 weekends, spread out.
+
+---
+
+### Phase 5 — Launch & iterate `⬜`
+
+**Goal:** get real users, learn, improve.
+
+**Scope**
+
+- **Privacy-friendly analytics** + **error monitoring** (e.g. Sentry).
+- A **feedback channel** and a lightweight changelog.
+- **Launch** to local badminton communities, subreddits, clubs, Product Hunt.
+- Watch **free → paid conversion**; tune the split and price. Revisit a subscription/team tier
+  **only if** costs or demand justify it.
+
+**Done when:** real clubs use it weekly, you have a feedback loop, and you've made your first sales.
+
+**Effort:** ongoing.
+
+---
+
+## 5. Roadmap at a glance
+
+| Phase | Goal | Unlocks | Effort | Status |
+|---|---|---|---|:---:|
+| 0 | Foundations & safety (DB-agnostic) | A clean base + easy migration | ~2 wknds | ⬜ |
+| 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ⬜ |
+| 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ⬜ |
+| 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
+| 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
+| 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
+
+---
+
+## 6. Quick wins for this weekend
+
+Small, high-value items that also **prep for the Supabase migration** (all Phase 0 / Low):
+
+1. **Extract all data access into one service module** — the single highest-leverage step; it turns
+   the Supabase swap into a one-file change.
+2. **Add error toasts** to every write — stop silent failures (M1).
+3. **Fix the dark-mode CSS conflict** — quick visual-credibility win.
+4. **Set real page metadata + rewrite the README.**
+5. **Remove unused `framer-motion`** (or actually use it).
+
+---
+
+## 7. Decisions & open questions
+
+Track choices here so the "why" isn't lost.
+
+- [x] **Database / backend** — ✅ **Supabase** (Postgres + Auth + Realtime + RLS), replacing Firestore. _(2026-07-03)_
+- [ ] **Payment provider** — merchant-of-record (Lemon Squeezy/Paddle) vs Stripe? _(leaning MoR for tax simplicity; webhook runs on Supabase Edge Functions either way)_
+- [ ] **Auth method** — Supabase email magic-link, Google, or both?
+- [ ] **Free-tier limits** — exact court/player/session caps (validate with real use).
+- [ ] **Price point** — the one-time number + whether to run a founder's price.
+- [ ] **Roles** — can shared-code users edit, or view-only?
+- [ ] **One-time vs subscription** — revisit after launch, once you see real usage costs (and the Supabase Pro $25/mo threshold).
+
+---
+
+## Changelog
+
+- **2026-07-03** — Backend decision: **migrate to Supabase**. Reworked Phase 1 into the Supabase
+  migration + multi-tenant schema; auth/authorization now via Supabase Auth + RLS; payment webhook
+  via Supabase Edge Functions.
+- **2026-07-03** — Initial roadmap created from full-codebase audit.
