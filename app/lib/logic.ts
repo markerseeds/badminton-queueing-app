@@ -2,7 +2,7 @@
 // arrays and have no knowledge of Firebase or Supabase.
 
 import { SKILLS } from "./constants";
-import type { NewPlayer, Player } from "./types";
+import type { NewPlayer, Player, SessionState } from "./types";
 
 // Maps a skill string to its ordinal (0..5); -1 if unknown.
 export const getSkillIndex = (skill: string): number => SKILLS.indexOf(skill);
@@ -56,11 +56,15 @@ export function parseBatchInput(text: string): {
   players?: NewPlayer[];
   error?: string;
 } {
-  const lines = text.split("\n").filter((line) => line.trim() !== "");
+  const rawLines = text.split("\n");
   const players: NewPlayer[] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const [name, skill] = lines[i].split(",").map((item) => item.trim());
+  // Iterate over the raw lines so error messages report the real textarea line
+  // number (blank lines are skipped but still counted toward the number).
+  for (let i = 0; i < rawLines.length; i++) {
+    if (rawLines[i].trim() === "") continue;
+
+    const [name, skill] = rawLines[i].split(",").map((item) => item.trim());
 
     if (!name || !skill) {
       return { error: `Line ${i + 1}: Format must be "Name, Skill"` };
@@ -75,4 +79,13 @@ export function parseBatchInput(text: string): {
   }
 
   return { players };
+}
+
+// Players who are neither on a court nor in the queue — i.e. selectable.
+export function getAvailablePlayers(state: SessionState): Player[] {
+  const playing = new Set(
+    state.games.flatMap((g) => g.players).map((p) => p.id),
+  );
+  const queued = new Set(state.queue.map((p) => p.id));
+  return state.players.filter((p) => !playing.has(p.id) && !queued.has(p.id));
 }

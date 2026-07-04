@@ -9,6 +9,7 @@ import { CourtBoard } from "../../components/CourtBoard";
 import { PlayerList } from "../../components/PlayerList";
 import { QueuePanel } from "../../components/QueuePanel";
 import { useSession } from "../../hooks/useSession";
+import { getAvailablePlayers } from "../../lib/logic";
 import type { Player } from "../../lib/types";
 
 export function RoomClient({ code }: { code: string }) {
@@ -96,13 +97,7 @@ export function RoomClient({ code }: { code: string }) {
     }
   };
 
-  const playingIds = new Set(
-    state.games.flatMap((g) => g.players).map((p) => p.id),
-  );
-  const queuedIds = new Set(state.queue.map((p) => p.id));
-  const availablePlayers = state.players.filter(
-    (p) => !playingIds.has(p.id) && !queuedIds.has(p.id),
-  );
+  const availablePlayers = getAvailablePlayers(state);
   const startDisabled =
     state.queue.length < 4 || state.games.every((g) => g.players.length > 0);
 

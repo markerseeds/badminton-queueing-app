@@ -328,13 +328,9 @@ export async function setCourts(
   sessionId: string,
   newCourts: number,
 ): Promise<void> {
-  await run(
-    supabase
-      .from("sessions")
-      .update({ courts: newCourts, updated_at: new Date().toISOString() })
-      .eq("id", sessionId),
-  );
-  // Players on courts that no longer exist return to the available list.
+  // Idle any players on courts that will no longer exist FIRST, so that a
+  // failure of the second write can't leave a player marked "playing" on a
+  // court that no longer exists (a ghost that reads as available).
   await run(
     supabase
       .from("players")
@@ -342,5 +338,11 @@ export async function setCourts(
       .eq("session_id", sessionId)
       .eq("status", "playing")
       .gt("court_no", newCourts),
+  );
+  await run(
+    supabase
+      .from("sessions")
+      .update({ courts: newCourts, updated_at: new Date().toISOString() })
+      .eq("id", sessionId),
   );
 }

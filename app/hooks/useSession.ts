@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { pickFourPlayers } from "../lib/logic";
+import { getAvailablePlayers, pickFourPlayers } from "../lib/logic";
 import * as store from "../lib/sessionStore";
 import type { LoadedSession, NewPlayer, Player } from "../lib/types";
 
@@ -73,12 +73,6 @@ export function useSession(code: string) {
     }
   };
 
-  const availablePlayers = (s: LoadedSession): Player[] => {
-    const playing = new Set(s.games.flatMap((g) => g.players).map((p) => p.id));
-    const queued = new Set(s.queue.map((p) => p.id));
-    return s.players.filter((p) => !playing.has(p.id) && !queued.has(p.id));
-  };
-
   const actions = {
     addPlayer: (player: NewPlayer) => act((s) => store.addPlayer(s.id, player)),
     batchAdd: (players: NewPlayer[]) =>
@@ -95,7 +89,7 @@ export function useSession(code: string) {
       }),
     autoPick: () =>
       act(async (s) => {
-        const picked = pickFourPlayers(availablePlayers(s));
+        const picked = pickFourPlayers(getAvailablePlayers(s));
         if (picked.length === 0) return;
         await store.enqueue(
           s.id,
