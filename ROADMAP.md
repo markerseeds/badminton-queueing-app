@@ -4,10 +4,10 @@
 > tool into a commercial, professional product with a free tier and a one-time paid unlock.
 > Update the **Status** columns as you go. Add notes, dates, and decisions at the bottom.
 >
-> **Chosen backend:** migrating from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
-> + Row-Level Security). _Decision made 2026-07-03._
+> **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
+> + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-07-03_
+> _Last reviewed: 2026-07-04_
 
 ---
 
@@ -24,11 +24,11 @@ Don't try to do it all at once. **Phases 0–2 are the ones that actually block 
 
 ## 1. Where the app is today
 
-**Current stack:** Next.js 16, React 19, Firebase Firestore, Tailwind CSS 4. (`framer-motion` is
-installed but unused — drop it or use it.)
+**Current stack:** Next.js 16, React 19, **Supabase** (Postgres + Realtime + Row-Level Security),
+Tailwind CSS 4. _(Migrated off Firebase Firestore 2026-07-04; unused `framer-motion` removed.)_
 
-**Target stack (migrating to):** Next.js + React (unchanged), **Supabase** for the database
-(Postgres), authentication, real-time sync, and row-level authorization, Tailwind for UI.
+**Still to come on Supabase:** authentication and owner-scoped authorization (Phase 2), plus payments
+via Edge Functions (Phase 3).
 
 **What it does:** One live "room" where an organizer adds players (with a skill level), sets 1–6
 courts, builds a queue, and auto-picks fair, skill-matched groups of 4. It tracks games played,
@@ -36,16 +36,16 @@ supports batch-add, shuffle-teams, delete-all, and syncs in real time across dev
 
 **What's genuinely good:**
 
-- Real-time multi-device sync already works — Supabase Realtime will replace the Firestore
-  `onSnapshot` subscription without changing this behaviour for users.
+- Real-time multi-device sync works — Supabase Realtime (Postgres Changes) now drives it, replacing
+  the Firestore `onSnapshot` subscription with no change in behaviour for users.
 - The auto-pick logic is thoughtful — fewest games played first, then keeps the four players within
   one skill band, with a sensible fallback. **This logic is DB-agnostic and carries over as-is.**
 - Confirmation modals on destructive actions; clean Tailwind UI; batch import.
 
-**The core limitation:** it's built as a **single, shared room for one club** (`sessionId` is
-hardcoded). That single decision is what stands between you and a commercial product, and it's the
-spine of this roadmap. The move to Supabase is the moment we fix it — by designing a proper
-multi-tenant schema from the start.
+**The core limitation — now resolved:** it *was* built as a **single, shared room for one club**
+(`sessionId` hardcoded to `"club-session-1"`). As of 2026-07-04 this is fixed: the Supabase migration
+shipped a multi-tenant schema with shareable-code rooms (`/s/CODE`), so every club runs an
+independent, real-time room. This was the spine of the roadmap — Phase 1 is done.
 
 ---
 
@@ -53,6 +53,12 @@ multi-tenant schema from the start.
 
 Grouped by severity. Locations reference the current `app/page.tsx` unless noted. Each item notes
 **→ how the plan fixes it** (most map to the Supabase migration).
+
+> **Status (2026-07-04):** Phases 0 & 1 shipped, resolving **C1, H1, H2, H3, M1, M2, M3, M4** and the
+> low-severity **metadata**, **dark-mode**, and **framer-motion** items. **C2** is partially
+> addressed — RLS is enabled on every table, but with a permissive capability-URL policy (any
+> anon-key holder can read/write any room; a room's only gate is its unguessable code); it tightens
+> to owner-scoped RLS in Phase 2. **C3** (auth) and **C4** (payments) remain (Phases 2–3).
 
 ### 🔴 Critical — these block commercialization outright
 
@@ -169,7 +175,7 @@ account.** Treat the number as a hypothesis to test.
 
 ---
 
-### Phase 0 — Foundations & safety `⬜`  *(DB-agnostic — do first)*
+### Phase 0 — Foundations & safety `✅`  *(DB-agnostic — done 2026-07-04)*
 
 **Goal:** clean up the current app so the Supabase migration is a smooth swap, not a rewrite.
 
@@ -190,11 +196,17 @@ account.** Treat the number as a hypothesis to test.
 **Done when:** all data access goes through one service module; writes fail gracefully with user
 feedback; no config inline; app builds clean.
 
+**✅ Done (2026-07-04):** `page.tsx` split into `CourtBoard` / `QueuePanel` / `PlayerList` / modals /
+`ui` components, a `useSession` hook, `lib/types.ts` + `lib/constants.ts` + `lib/logic.ts`, and the
+single data-access module `lib/sessionStore.ts`. Per-write `try/catch` surfacing a dismissible error
+banner; `useEffect` dep fixed; config moved to `NEXT_PUBLIC_*`; dark-mode conflict fixed; real
+metadata; README rewritten; `framer-motion` removed. `tsc` / `eslint` / `build` all clean.
+
 **Effort:** ~2 weekends.
 
 ---
 
-### Phase 1 — Migrate to Supabase + multi-tenant schema `⬜`  *(the critical unlock)*
+### Phase 1 — Migrate to Supabase + multi-tenant schema `✅`  *(the critical unlock — done 2026-07-04)*
 
 **Goal:** move onto Supabase **and** fix the single-shared-session problem in one move, by designing
 the schema multi-tenant from day one. Fixes **C1, H1, H2** together.
@@ -217,6 +229,16 @@ the schema multi-tenant from day one. Fixes **C1, H1, H2** together.
 **Done when:** two browsers with different codes have fully independent, real-time state; the global
 `club-session-1` doc is gone; RLS is on; the app runs entirely on Supabase.
 
+**✅ Done (2026-07-04):** Two-table schema `sessions` + `players`, where a player's `status` /
+`queue_position` / `court_no` / `court_slot` columns carry queue and court state (simpler than the
+separate `games`/`court_state` table originally sketched; a match-history table stays a Phase 4
+concern). RLS on with the capability-URL policy; Supabase Realtime (Postgres Changes filtered by
+`session_id`, with `REPLICA IDENTITY FULL` so filtered DELETEs propagate) replaced `onSnapshot`; a
+create/join landing plus `/s/CODE` rooms; the auto-pick / queue / games logic carried over unchanged.
+`useSession` also refetches after each write for resilience if realtime lags. Verified end-to-end
+against the live DB (CRUD, RLS, constraints, cascade, realtime INSERT/UPDATE/DELETE). **Bonus:**
+migrations auto-apply on Vercel **production** builds via a gated build step (`supabase db push`).
+
 **Effort:** ~3–4 weekends (the biggest phase — new schema + realtime + routing).
 
 ---
@@ -233,6 +255,9 @@ RLS can enforce real ownership (C2).
 - Set `sessions.owner_id` on creation; add a **"My sessions"** list.
 - Tighten **RLS**: owners manage their sessions; shared-code users operate or view-only (decide the
   role model).
+- **Harden multi-row writes** flagged in the 2026-07-04 review: wrap `startGame` / `enqueue` /
+  `shuffleQueueFront` / `setCourts` in **transactional Postgres RPCs** so a partial failure can't
+  leave half-applied state (they currently issue several independent row updates).
 
 **Done when:** a user signs in, creates and saves multiple sessions tied to their account, and RLS
 stops anyone editing sessions they don't own.
@@ -305,8 +330,8 @@ Pro features are genuinely worth paying for.
 
 | Phase | Goal | Unlocks | Effort | Status |
 |---|---|---|---|:---:|
-| 0 | Foundations & safety (DB-agnostic) | A clean base + easy migration | ~2 wknds | ⬜ |
-| 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ⬜ |
+| 0 | Foundations & safety (DB-agnostic) | A clean base + easy migration | ~2 wknds | ✅ |
+| 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ✅ |
 | 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ⬜ |
 | 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
@@ -316,7 +341,7 @@ Pro features are genuinely worth paying for.
 
 ## 6. Quick wins for this weekend
 
-Small, high-value items that also **prep for the Supabase migration** (all Phase 0 / Low):
+**✅ All done (2026-07-04)** — these landed as part of Phase 0; kept here for the record:
 
 1. **Extract all data access into one service module** — the single highest-leverage step; it turns
    the Supabase swap into a one-file change.
@@ -336,13 +361,25 @@ Track choices here so the "why" isn't lost.
 - [ ] **Auth method** — Supabase email magic-link, Google, or both?
 - [ ] **Free-tier limits** — exact court/player/session caps (validate with real use).
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
-- [ ] **Roles** — can shared-code users edit, or view-only?
+- [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
+  only gate is its unguessable code. Revisit view-only / owner-only roles in Phase 2. _(2026-07-04)_
+- [x] **Migrations on deploy** — auto-applied on Vercel **production** builds via a gated step
+  (`supabase db push`); preview/local builds skip so they never touch prod. _(2026-07-04)_
 - [ ] **One-time vs subscription** — revisit after launch, once you see real usage costs (and the Supabase Pro $25/mo threshold).
 
 ---
 
 ## Changelog
 
+- **2026-07-04** — **Phases 0 & 1 shipped.** Refactored `page.tsx` into components + a `useSession`
+  hook + `lib/` modules (types, constants, logic, `sessionStore` data-access, `supabase` client).
+  Migrated Firestore → Supabase: multi-tenant `sessions` / `players` schema, RLS (capability-URL
+  model), Realtime (with `REPLICA IDENTITY FULL`), shareable `/s/CODE` rooms + create/join landing;
+  removed Firebase and `framer-motion`; fixed dark-mode, metadata, README, and the `useEffect`
+  warning. Added auto-migration on Vercel production builds. Ran a full-branch code review and
+  applied the safe fixes (batch line numbers, `getAvailablePlayers` dedupe, `setCourts` write order);
+  **deferred:** transactional multi-row RPCs and owner-scoped RLS (Phase 2), the auto-pick fairness
+  tweak, the number-input UX, and the `className`-merge cleanup.
 - **2026-07-03** — Backend decision: **migrate to Supabase**. Reworked Phase 1 into the Supabase
   migration + multi-tenant schema; auth/authorization now via Supabase Auth + RLS; payment webhook
   via Supabase Edge Functions.
