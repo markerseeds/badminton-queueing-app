@@ -17,16 +17,19 @@ export function shuffleArray<T>(array: T[]): T[] {
 }
 
 // Auto-pick the best group of four from the available players:
-//   1. sort by games played (fewest first), then shuffle for fair tie-breaking,
+//   1. shuffle, then STABLY sort by games played (fewest first) — so the list runs
+//      fewest-games-first with ties broken randomly,
 //   2. slide a window of four and take the first group within one skill band,
 //   3. fall back to the first four if no in-band group exists.
 // Operates on a copy so the caller's array is left untouched.
 export function pickFourPlayers(available: Player[]): Player[] {
   if (available.length < 4) return [];
 
-  let players = [...available];
+  // Shuffle first, then a *stable* sort by games played. Array.prototype.sort is
+  // stable (ES2019+), so equal-games players keep their shuffled (random) order
+  // while the overall list still runs fewest-games-first.
+  const players = shuffleArray([...available]);
   players.sort((a, b) => a.gamesPlayed - b.gamesPlayed);
-  players = shuffleArray(players);
 
   let group: Player[] = [];
   for (let i = 0; i <= players.length - 4; i++) {

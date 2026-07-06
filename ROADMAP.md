@@ -372,6 +372,15 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-07-06** — **Auto-pick fairness fix.** `pickFourPlayers` sorted by games played and
+  then shuffled the *whole* pool, discarding that ordering — so a player who'd already played
+  10 games was just as likely to be auto-picked as one who'd played none. Swapped to the correct
+  idiom: **shuffle first, then a *stable* sort** by `gamesPlayed` (JS `Array.prototype.sort` is
+  stable, ES2019+), so the pool now runs fewest-games-first with ties still broken randomly.
+  Skill-band windowing and the fallback are unchanged. Added the repo's **first pure-logic unit
+  test** (`tests/logic/pick_four_players.test.ts`) — DB-free, so it runs under `vitest run`
+  without a local Supabase stack — including a regression case that fails on the old ordering
+  and passes on the new. Clears the auto-pick fairness tweak deferred on 2026-07-04.
 - **2026-07-06** — **Transactional multi-row RPCs shipped** — a Phase 2 hardening item, landed early.
   Replaced the four client-side multi-write mutations (`enqueue`, `startGame`, `shuffleQueueFront`,
   `setCourts`) with `plpgsql` RPCs, each running as one transaction under a per-session advisory lock:
