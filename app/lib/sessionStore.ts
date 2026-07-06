@@ -3,7 +3,6 @@
 // directly. Assembles the relational rows back into the in-memory SessionState
 // shape the UI renders from.
 
-import { shuffleArray } from "./logic";
 import { supabase } from "./supabase";
 import type {
   CourtGame,
@@ -208,40 +207,19 @@ export async function setGamesPlayed(
 }
 
 // ---------- queue ----------
-async function nextQueuePosition(sessionId: string): Promise<number> {
-  const { data, error } = await supabase
-    .from("players")
-    .select("queue_position")
-    .eq("session_id", sessionId)
-    .eq("status", "queued")
-    .order("queue_position", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return (data?.queue_position ?? -1) + 1;
-}
-
 // Append players to the back of the queue, preserving the given order.
+// The starting position is computed inside the RPC's transaction, so two
+// concurrent enqueues can't collide on the same position.
 export async function enqueue(
   sessionId: string,
   playerIds: string[],
 ): Promise<void> {
   if (playerIds.length === 0) return;
-  const start = await nextQueuePosition(sessionId);
-  await Promise.all(
-    playerIds.map((id, i) =>
-      run(
-        supabase
-          .from("players")
-          .update({
-            status: "queued",
-            queue_position: start + i,
-            court_no: null,
-            court_slot: null,
-          })
-          .eq("id", id),
-      ),
-    ),
+  await run(
+    supabase.rpc("enqueue_players", {
+      p_session_id: sessionId,
+      p_player_ids: playerIds,
+    }),
   );
 }
 
@@ -259,55 +237,20 @@ export async function shuffleQueueFront(
   sessionId: string,
   size = 4,
 ): Promise<void> {
-  const { data, error } = await supabase
-    .from("players")
-    .select("id, queue_position")
-    .eq("session_id", sessionId)
-    .eq("status", "queued")
-    .order("queue_position", { ascending: true })
-    .limit(size);
-  if (error) throw error;
-
-  const front = data ?? [];
-  if (front.length < size) return;
-
-  const positions = front.map((r) => r.queue_position);
-  const shuffledIds = shuffleArray(front.map((r) => r.id));
-  await Promise.all(
-    shuffledIds.map((id, i) =>
-      run(
-        supabase
-          .from("players")
-          .update({ queue_position: positions[i] })
-          .eq("id", id),
-      ),
-    ),
+  await run(
+    supabase.rpc("shuffle_queue_front", {
+      p_session_id: sessionId,
+      p_size: size,
+    }),
   );
 }
 
 // ---------- courts ----------
-// Move the given players onto a court (slots 0-3 → Team 1 / Team 2) and set each
-// player's new games-played total (computed by the caller from current state).
-export async function startGame(
-  courtNo: number,
-  players: { id: string; gamesPlayed: number }[],
-): Promise<void> {
-  await Promise.all(
-    players.map((p, i) =>
-      run(
-        supabase
-          .from("players")
-          .update({
-            status: "playing",
-            court_no: courtNo,
-            court_slot: i,
-            games_played: p.gamesPlayed,
-            queue_position: null,
-          })
-          .eq("id", p.id),
-      ),
-    ),
-  );
+// Move the front four of the queue onto the first empty court, incrementing each
+// player's games-played. The court and the four players are chosen server-side
+// (inside the transaction), so concurrent starts can't double-book a court.
+export async function startGame(sessionId: string): Promise<void> {
+  await run(supabase.rpc("start_game", { p_session_id: sessionId }));
 }
 
 export async function endGame(
@@ -324,25 +267,17 @@ export async function endGame(
   );
 }
 
+// Change the court count, idling any players stranded on removed courts. Both
+// writes happen in one transaction inside the RPC, so a partial failure can't
+// leave a player "playing" on a court that no longer exists.
 export async function setCourts(
   sessionId: string,
   newCourts: number,
 ): Promise<void> {
-  // Idle any players on courts that will no longer exist FIRST, so that a
-  // failure of the second write can't leave a player marked "playing" on a
-  // court that no longer exists (a ghost that reads as available).
   await run(
-    supabase
-      .from("players")
-      .update({ status: "idle", court_no: null, court_slot: null })
-      .eq("session_id", sessionId)
-      .eq("status", "playing")
-      .gt("court_no", newCourts),
-  );
-  await run(
-    supabase
-      .from("sessions")
-      .update({ courts: newCourts, updated_at: new Date().toISOString() })
-      .eq("id", sessionId),
+    supabase.rpc("set_courts", {
+      p_session_id: sessionId,
+      p_courts: newCourts,
+    }),
   );
 }
