@@ -102,13 +102,11 @@ export function useSession(code: string) {
 
     startGame: () =>
       act(async (s) => {
-        const emptyCourt = s.games.find((g) => g.players.length === 0);
-        if (!emptyCourt || s.queue.length < 4) return;
-        const four = s.queue.slice(0, 4);
-        await store.startGame(
-          emptyCourt.court,
-          four.map((p) => ({ id: p.id, gamesPlayed: p.gamesPlayed + 1 })),
-        );
+        // Cheap early-out to avoid a pointless round-trip; the RPC re-checks and
+        // authoritatively picks the first empty court and the front four.
+        const hasEmptyCourt = s.games.some((g) => g.players.length === 0);
+        if (!hasEmptyCourt || s.queue.length < 4) return;
+        await store.startGame(s.id);
       }),
     endGame: (courtNo: number) => act((s) => store.endGame(s.id, courtNo)),
     changeCourts: (newCourts: number) =>
