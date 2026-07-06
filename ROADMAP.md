@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-07-04_
+> _Last reviewed: 2026-07-06_
 
 ---
 
@@ -255,9 +255,10 @@ RLS can enforce real ownership (C2).
 - Set `sessions.owner_id` on creation; add a **"My sessions"** list.
 - Tighten **RLS**: owners manage their sessions; shared-code users operate or view-only (decide the
   role model).
-- **Harden multi-row writes** flagged in the 2026-07-04 review: wrap `startGame` / `enqueue` /
-  `shuffleQueueFront` / `setCourts` in **transactional Postgres RPCs** so a partial failure can't
-  leave half-applied state (they currently issue several independent row updates).
+- **Harden multi-row writes** `✅ 2026-07-06` — `startGame` / `enqueue` / `shuffleQueueFront` /
+  `setCourts` are now **transactional Postgres RPCs** (one transaction + a per-session advisory lock),
+  so a partial failure can't leave half-applied state and concurrent organizers can't clobber each
+  other. Landed ahead of the rest of Phase 2; see the 2026-07-06 changelog entry.
 
 **Done when:** a user signs in, creates and saves multiple sessions tied to their account, and RLS
 stops anyone editing sessions they don't own.
@@ -371,6 +372,19 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-07-06** — **Transactional multi-row RPCs shipped** — a Phase 2 hardening item, landed early.
+  Replaced the four client-side multi-write mutations (`enqueue`, `startGame`, `shuffleQueueFront`,
+  `setCourts`) with `plpgsql` RPCs, each running as one transaction under a per-session advisory lock:
+  a partial failure can no longer leave half-applied state, and two organizers acting at once can't
+  clobber each other (closes the **H1** read-modify-write race for these paths). Derived values (next
+  queue position, first empty court, front four, games+1) are computed inside the transaction; the
+  auto-pick skill-matching stays client-side. `SECURITY INVOKER`, so RLS still applies and Phase 2
+  owner-scoping is inherited for free. Added the repo's **first automated tests** — a vitest suite
+  against a local Supabase stack (per-RPC correctness + two race tests + a rollback/atomicity test,
+  each verified to fail without the fix) — and a **GitHub Actions** workflow that runs them on every
+  PR. Also made the `anon` / `authenticated` / `service_role` table grants **explicit** so a fresh
+  `supabase start` (local + CI) matches production. **Still deferred to Phase 2:** Supabase Auth,
+  `owner_id` ownership, and owner-scoped RLS.
 - **2026-07-04** — **Phases 0 & 1 shipped.** Refactored `page.tsx` into components + a `useSession`
   hook + `lib/` modules (types, constants, logic, `sessionStore` data-access, `supabase` client).
   Migrated Firestore → Supabase: multi-tenant `sessions` / `players` schema, RLS (capability-URL
