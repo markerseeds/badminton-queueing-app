@@ -98,7 +98,7 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 - **Dark-mode bug:** `globals.css` defines dark background vars, but `body` forces black text and cards are `bg-white` — broken in dark mode. Fix or disable.
 - **Accessibility:** emoji-as-icons, low-contrast text, missing `aria-label`s, unlabeled number input — **largely addressed 2026-07-06** (aria labels/roles, dialog semantics, disclosure menu, WCAG-AA contrast). _Remaining before launch:_ full modal focus-trapping / return-focus.
 - **No landing / pricing pages** — the app boots straight into the tool (Phase 4).
-- **No tests, CI, analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable).
+- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). _(Automated **tests + CI** now exist — a vitest suite of pure-logic + local-Supabase RPC tests runs on every PR via GitHub Actions.)_
 
 **Verification run:** `tsc --noEmit` passes clean; `eslint` reports only the one `useEffect`
 warning (M3); no security-rules file found; no `process.env` usage; `framer-motion` confirmed unused.
@@ -300,7 +300,7 @@ enforced; the entitlement survives refresh and works across devices.
 - **Match history + score tracking + basic stats** _(Pro)_ — add results tables (M5).
 - **Persistent roster** — save players between nights _(Pro)_ (M6).
 - **CSV export** _(Pro)_.
-- **PWA + offline resilience**, mobile-layout polish, the **dark-mode fix**, an **a11y pass**.
+- **PWA + offline resilience**, mobile-layout polish, and finishing the **a11y pass** (labels / roles / dialog semantics / AA contrast done 2026-07-06; **modal focus-trapping** remains). _(The dark-mode conflict was already resolved in Phase 0.)_
 
 **Done when:** a brand-new user lands, understands it, runs a full club night on their phone, and the
 Pro features are genuinely worth paying for.
