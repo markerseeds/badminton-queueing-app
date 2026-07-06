@@ -84,6 +84,19 @@ export function parseBatchInput(text: string): {
   return { players };
 }
 
+// Clamp a games-played count to a non-negative whole number. Guards the −
+// stepper (which can otherwise go below zero) and any stray fractional/NaN value.
+export function clampGamesPlayed(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
+}
+
+// Parse the games-counter text input into a non-negative whole number. Empty or
+// non-numeric input (e.g. while the field is being cleared) becomes 0, not NaN.
+export function parseGamesPlayedInput(raw: string): number {
+  return clampGamesPlayed(parseInt(raw, 10));
+}
+
 // Players who are neither on a court nor in the queue — i.e. selectable.
 export function getAvailablePlayers(state: SessionState): Player[] {
   const playing = new Set(

@@ -22,10 +22,12 @@ export function QueuePanel({
         <h2 className="font-semibold">Queue</h2>
         {queue.length >= 4 && (
           <button
+            type="button"
             onClick={onShuffleTop}
             className="text-[10px] bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded flex items-center gap-1 transition-colors"
           >
             <svg
+              aria-hidden="true"
               width="12"
               height="12"
               viewBox="0 0 24 24"
@@ -64,7 +66,7 @@ export function QueuePanel({
                 {i < 4 && (
                   <span
                     className={`text-[10px] ${
-                      i < 2 ? "text-blue-500" : "text-red-500"
+                      i < 2 ? "text-blue-600" : "text-red-600"
                     }  font-bold ml-1`}
                   >
                     (T{i < 2 ? "1" : "2"})

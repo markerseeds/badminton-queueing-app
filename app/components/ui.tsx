@@ -2,42 +2,63 @@
 
 import type {
   ButtonHTMLAttributes,
+  HTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
 } from "react";
+import { cn } from "../lib/cn";
 
 export function Card({
   children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
   return (
-    <div className={`bg-white border rounded-xl ${className}`}>{children}</div>
+    <div {...props} className={cn("bg-white border rounded-xl", className)}>
+      {children}
+    </div>
   );
 }
 
 export function Button({
   children,
-  className = "",
+  className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode }) {
   return (
     <button
       {...props}
-      className={`px-3 py-1 rounded-lg bg-black text-white hover:opacity-80 disabled:opacity-40 ${className}`}
+      className={cn(
+        "px-3 py-1 rounded-lg bg-black text-white hover:opacity-80 disabled:opacity-40",
+        className,
+      )}
     >
       {children}
     </button>
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className="border rounded-lg px-2 py-1 w-full" />;
+export function Input({
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={cn("border rounded-lg px-2 py-1 w-full", className)}
+    />
+  );
 }
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className="border rounded-lg px-2 py-1 w-full" />;
+export function Select({
+  className,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={cn("border rounded-lg px-2 py-1 w-full", className)}
+    />
+  );
 }

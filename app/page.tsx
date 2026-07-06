@@ -33,13 +33,16 @@ export default function Home() {
     <div className="min-h-screen flex items-center justify-center p-6">
       <Card className="p-8 w-full max-w-md space-y-6">
         <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold">🏸 Badminton Queue</h1>
+          <h1 className="text-2xl font-bold">
+            <span aria-hidden="true">🏸</span> Badminton Queue
+          </h1>
           <p className="text-sm text-gray-500">
             Create a room and share the link with your club.
           </p>
         </div>
 
         <Button
+          type="button"
           onClick={handleCreate}
           disabled={creating}
           className="w-full py-2"
@@ -47,16 +50,22 @@ export default function Home() {
           {creating ? "Creating…" : "Create a room"}
         </Button>
 
-        <div className="flex items-center gap-3 text-xs text-gray-400">
+        <div
+          aria-hidden="true"
+          className="flex items-center gap-3 text-xs text-gray-500"
+        >
           <div className="h-px bg-gray-200 flex-1" />
           OR
           <div className="h-px bg-gray-200 flex-1" />
         </div>
 
         <form onSubmit={handleJoin} className="space-y-2">
-          <label className="text-sm font-medium">Join with a room code</label>
+          <label htmlFor="join-code" className="text-sm font-medium">
+            Join with a room code
+          </label>
           <div className="flex gap-2">
             <Input
+              id="join-code"
               placeholder="e.g. ABCD2345"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
@@ -67,7 +76,11 @@ export default function Home() {
           </div>
         </form>
 
-        {error && <p className="text-red-600 text-sm">⚠️ {error}</p>}
+        {error && (
+          <p role="alert" className="text-red-600 text-sm">
+            <span aria-hidden="true">⚠️</span> {error}
+          </p>
+        )}
       </Card>
     </div>
   );

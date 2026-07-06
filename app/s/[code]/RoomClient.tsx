@@ -112,6 +112,7 @@ export function RoomClient({ code }: { code: string }) {
           </span>
         </div>
         <button
+          type="button"
           onClick={copyLink}
           className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
         >
@@ -120,9 +121,19 @@ export function RoomClient({ code }: { code: string }) {
       </div>
 
       {error && (
-        <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
-          <span>⚠️ {error}</span>
-          <button onClick={dismissError} className="font-bold px-2">
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg"
+        >
+          <span>
+            <span aria-hidden="true">⚠️</span> {error}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss error"
+            onClick={dismissError}
+            className="font-bold px-2"
+          >
             ×
           </button>
         </div>

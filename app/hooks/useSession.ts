@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getAvailablePlayers, pickFourPlayers } from "../lib/logic";
+import {
+  clampGamesPlayed,
+  getAvailablePlayers,
+  pickFourPlayers,
+} from "../lib/logic";
 import * as store from "../lib/sessionStore";
 import type { LoadedSession, NewPlayer, Player } from "../lib/types";
 
@@ -80,7 +84,7 @@ export function useSession(code: string) {
     deletePlayer: (player: Player) => act(() => store.deletePlayer(player.id)),
     deleteAll: () => act((s) => store.deleteAllPlayers(s.id)),
     setGamesPlayed: (playerId: string, value: number) =>
-      act(() => store.setGamesPlayed(playerId, isNaN(value) ? 0 : value)),
+      act(() => store.setGamesPlayed(playerId, clampGamesPlayed(value))),
 
     addToQueue: (player: Player) =>
       act(async (s) => {

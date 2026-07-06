@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { SKILLS } from "../lib/constants";
 import type { NewPlayer } from "../lib/types";
 import { Button, Card, Input, Select } from "./ui";
@@ -15,6 +16,8 @@ export function AddPlayerModal({
   const [playerName, setPlayerName] = useState("");
   const [skill, setSkill] = useState(SKILLS[0]);
 
+  useEscapeKey(onCancel);
+
   const handleAdd = () => {
     if (!playerName.trim()) return;
     onSubmit({ name: playerName.trim(), skill });
@@ -22,15 +25,25 @@ export function AddPlayerModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
-      <Card className="p-6 w-full max-w-sm">
-        <h3 className="font-semibold mb-4">Add Player</h3>
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-player-title"
+        className="p-6 w-full max-w-sm"
+      >
+        <h3 id="add-player-title" className="font-semibold mb-4">
+          Add Player
+        </h3>
         <div className="flex flex-col justify-between gap-2 mt-4">
           <Input
+            autoFocus
+            aria-label="Player name"
             placeholder="Name"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
           />
           <Select
+            aria-label="Skill level"
             className="mt-3"
             value={skill}
             onChange={(e) => setSkill(e.target.value)}

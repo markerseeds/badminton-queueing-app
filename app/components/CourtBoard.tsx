@@ -20,8 +20,11 @@ export function CourtBoard({
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">Courts</h1>
         <div className="flex items-center space-x-2">
-          <span className="text-sm">Number of Courts:</span>
+          <label htmlFor="courts-select" className="text-sm">
+            Number of Courts:
+          </label>
           <Select
+            id="courts-select"
             className="w-20"
             value={courts}
             onChange={(e) => onChangeCourts(Number(e.target.value))}
@@ -61,7 +64,10 @@ export function CourtBoard({
                   </ul>
                 </div>
 
-                <div className="text-center text-xs font-bold text-gray-300 italic">
+                <div
+                  aria-hidden="true"
+                  className="text-center text-xs font-bold text-gray-500 italic"
+                >
                   VS
                 </div>
 
@@ -91,7 +97,7 @@ export function CourtBoard({
               </div>
             ) : (
               <div className="h-32 flex items-center justify-center border-2 border-dashed border-gray-100 rounded-lg">
-                <p className="text-sm text-gray-400">Empty</p>
+                <p className="text-sm text-gray-500">Empty</p>
               </div>
             )}
           </Card>
