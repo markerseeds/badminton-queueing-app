@@ -7,11 +7,15 @@ import { Button, Card, Select } from "./ui";
 export function CourtBoard({
   games,
   courts,
+  readOnly = false,
   onChangeCourts,
   onEndGame,
 }: {
   games: CourtGame[];
   courts: number;
+  // Set when the organizer has locked the room and the viewer isn't the owner.
+  // RLS is the real gate; this just avoids offering controls that would fail.
+  readOnly?: boolean;
   onChangeCourts: (newCourts: number) => void;
   onEndGame: (courtNumber: number, courtIndex: number) => void;
 }) {
@@ -27,6 +31,7 @@ export function CourtBoard({
             id="courts-select"
             className="w-20"
             value={courts}
+            disabled={readOnly}
             onChange={(e) => onChangeCourts(Number(e.target.value))}
           >
             {COURT_COUNTS.map((count) => (
@@ -90,6 +95,7 @@ export function CourtBoard({
 
                 <Button
                   className="w-full bg-red-600 mt-2"
+                  disabled={readOnly}
                   onClick={() => onEndGame(game.court, index)}
                 >
                   End Game

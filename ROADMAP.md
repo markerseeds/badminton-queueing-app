@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-07-06_
+> _Last reviewed: 2026-08-03_
 
 ---
 
@@ -27,8 +27,9 @@ Don't try to do it all at once. **Phases 0–2 are the ones that actually block 
 **Current stack:** Next.js 16, React 19, **Supabase** (Postgres + Realtime + Row-Level Security),
 Tailwind CSS 4. _(Migrated off Firebase Firestore 2026-07-04; unused `framer-motion` removed.)_
 
-**Still to come on Supabase:** authentication and owner-scoped authorization (Phase 2), plus payments
-via Edge Functions (Phase 3).
+**Still to come on Supabase:** payments via Edge Functions (Phase 3). _(Authentication and
+owner-scoped authorization landed 2026-08-03 — rooms have owners, RLS is owner-aware, and organizers
+can lock a room. Google sign-in is wired but needs OAuth credentials; see Phase 2.)_
 
 **What it does:** One live "room" where an organizer adds players (with a skill level), sets 1–6
 courts, builds a queue, and auto-picks fair, skill-matched groups of 4. It tracks games played,
@@ -59,6 +60,14 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 > addressed — RLS is enabled on every table, but with a permissive capability-URL policy (any
 > anon-key holder can read/write any room; a room's only gate is its unguessable code); it tightens
 > to owner-scoped RLS in Phase 2. **C3** (auth) and **C4** (payments) remain (Phases 2–3).
+>
+> **Status (2026-08-03):** **C3 is resolved** — every room now has an `owner_id` backed by a real
+> `auth.users` row, so Phase 3 has something to hang an entitlement on. **C2 is closed as far as the
+> product allows**: the blanket `using (true)` policies are gone, replaced by owner-aware policies
+> plus column-level grants that make `owner_id` / `share_code` / `locked` unwritable through the API.
+> An *unlocked* room's contents are still reachable by anyone with the code — that is the deliberate
+> product choice (club night needs shared editing), and the per-room **lock** is the opt-in ceiling
+> for organizers who want one. **C4** (payments) remains (Phase 3).
 
 ### 🔴 Critical — these block commercialization outright
 
@@ -243,7 +252,7 @@ migrations auto-apply on Vercel **production** builds via a gated build step (`s
 
 ---
 
-### Phase 2 — Accounts & ownership `⬜`
+### Phase 2 — Accounts & ownership `✅`  *(done 2026-08-03)*
 
 **Goal:** organizers get a persistent identity so data and entitlements attach to them (C3), and
 RLS can enforce real ownership (C2).
@@ -262,6 +271,22 @@ RLS can enforce real ownership (C2).
 
 **Done when:** a user signs in, creates and saves multiple sessions tied to their account, and RLS
 stops anyone editing sessions they don't own.
+
+**✅ Done (2026-08-03):** ownership, the room lock, owner-aware RLS, column grants, "My rooms", and
+Google sign-in. The migration is applied to production and both providers are live there
+(`/auth/v1/settings` reports `anonymous_users: true`, `google: true`).
+
+Verified end-to-end against the **production** project, not just locally — anonymous sign-in, room
+creation with `owner_id`, a stranger editing an unlocked room (the club-night guarantee), the owner
+locking it, the stranger then being blocked (42501), the owner still editing, an ownership-hijack
+attempt rejected by the column grants (42501), and the room appearing under "My rooms".
+
+_Config note:_ `supabase/config.toml` governs the **local** stack only — production auth is
+configured in the dashboard. For local Google testing, set
+`SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET`, flip `[auth.external.google] enabled = true`,
+and add `http://localhost:3000/**` to the dashboard's **Redirect URLs**.
+
+Email magic-link remains a deliberate later addition.
 
 **Effort:** ~2 weekends (Supabase Auth + RLS does most of the heavy lifting).
 
@@ -333,7 +358,7 @@ Pro features are genuinely worth paying for.
 |---|---|---|---|:---:|
 | 0 | Foundations & safety (DB-agnostic) | A clean base + easy migration | ~2 wknds | ✅ |
 | 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ✅ |
-| 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ⬜ |
+| 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ✅ |
 | 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
@@ -359,11 +384,24 @@ Track choices here so the "why" isn't lost.
 
 - [x] **Database / backend** — ✅ **Supabase** (Postgres + Auth + Realtime + RLS), replacing Firestore. _(2026-07-03)_
 - [ ] **Payment provider** — merchant-of-record (Lemon Squeezy/Paddle) vs Stripe? _(leaning MoR for tax simplicity; webhook runs on Supabase Edge Functions either way)_
-- [ ] **Auth method** — Supabase email magic-link, Google, or both?
+- [x] **Auth method** — **Google first**, email magic-link later. Magic links break on phones (the
+  link opens in the mail app's in-app browser, so the session lands in the wrong one) and this is a
+  phone-first courtside tool. Supabase links identities by email, so adding email later is additive.
+  _(2026-08-03)_
+- [x] **How a room gets its owner** — **anonymous sign-in on create.** "Create a room" stays one tap;
+  the app signs the organizer in anonymously so `owner_id` is set from the first moment, and
+  `linkIdentity` later upgrades that same user id to Google without orphaning their rooms. Only room
+  *creators* get an `auth.users` row — joiners stay unauthenticated, so MAU tracks organizers, not
+  players. _(2026-08-03)_
 - [ ] **Free-tier limits** — exact court/player/session caps (validate with real use).
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
 - [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
   only gate is its unguessable code. Revisit view-only / owner-only roles in Phase 2. _(2026-07-04)_
+- [x] **Roles (Phase 2)** — **open by default, owner-lockable.** Anyone with the code keeps full edit
+  rights, because club night depends on it: the tablet by the courts and a co-organizer's phone must
+  both be able to queue players, and owner-only editing would make the organizer a bottleneck for the
+  whole session. Owners get a per-room **lock** that restricts writes to them alone — a real security
+  ceiling when wanted, and a natural Pro feature later. _(2026-08-03)_
 - [x] **Migrations on deploy** — auto-applied on Vercel **production** builds via a gated step
   (`supabase db push`); preview/local builds skip so they never touch prod. _(2026-07-04)_
 - [ ] **One-time vs subscription** — revisit after launch, once you see real usage costs (and the Supabase Pro $25/mo threshold).
@@ -372,6 +410,33 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-08-03** — **Phase 2: accounts & ownership.** Rooms now belong to someone. Tapping "Create a
+  room" signs the organizer in **anonymously** (`ensureUser` in the new `lib/auth.ts`) and stamps
+  `owner_id`, so a room has an owner from the first tap with no sign-in wall; `linkIdentity` later
+  upgrades that same user id to Google, so their rooms come with them. Only *creators* get an
+  `auth.users` row — opening a shared link never creates an account, keeping MAU to organizers.
+  **The Phase 1 blanket `using (true)` policies are gone**, replaced by per-operation owner-aware
+  policies and a new per-room **lock**: open by default (the club-night guarantee — the courtside
+  tablet and co-organizers keep editing), owner-only once locked. **The subtle part was `set_courts`**:
+  it's `SECURITY INVOKER` and writes `sessions`, so a naive owner-scoped UPDATE policy would have
+  broken court changes for every non-owner. Fixed with **column-level grants** — UPDATE is granted
+  only on `(courts, updated_at)`, leaving `owner_id` / `share_code` / `locked` unwritable through
+  PostgREST regardless of the row policy — so `locked` is toggled through a `SECURITY DEFINER`
+  `set_room_lock` RPC that re-checks ownership itself. Ownerless rooms (legacy, or whose owner
+  deleted their account — `owner_id` is `ON DELETE SET NULL`) deliberately fall back to *open* rather
+  than becoming rooms nobody can edit. New **"My rooms"** page (`/rooms`) with owner-only delete, an
+  account strip on the landing page, and a lock toggle + read-only mode in the room (a `readOnly`
+  prop threaded through `CourtBoard` / `QueuePanel` / `PlayerList` so no control is offered that RLS
+  would reject). **TDD'd**: 22 new tests written before the migration across `tests/rls/` and
+  `tests/rpc/set_room_lock.test.ts` — including the no-regression case that a stranger can still run
+  an unlocked room, and proof that an anonymously signed-in creator gets full ownership powers. All
+  49 tests pass and the four pre-existing RPC suites are unchanged. `tsc` / `eslint` clean (also
+  eslint-ignored the `supabase/.temp` bundle that `supabase start` generates). The migration was
+  then applied to **production** and the whole flow re-verified against the live project — anonymous
+  sign-in, owned room creation, a stranger editing an unlocked room, the lock, the stranger being
+  blocked, the owner still editing, an ownership-hijack rejection, and "My rooms". **Still
+  deferred:** email magic-link sign-in, and a `transfer_room_ownership` RPC for the case where an
+  anonymous user links a Google account that already exists.
 - **2026-07-06** — **Deferred polish: number-input UX, className merge, and an a11y pass.**
   Cleared three items parked since Phases 0/1. **(1) Games counter** is now a `GamesCounter`
   component — a `type="text"` + `inputMode="numeric"` field (no more native spinner clashing with

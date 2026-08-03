@@ -43,8 +43,24 @@ export type SessionState = {
   games: CourtGame[];
 };
 
-// A loaded session also carries its identity (used for realtime + writes).
+// A loaded session also carries its identity (used for realtime + writes) and
+// its ownership, which the UI uses to decide whether to offer the lock toggle
+// or show a read-only notice. RLS is the real gate; these just keep the UI
+// honest about what the current viewer can do.
 export type LoadedSession = SessionState & {
   id: string;
   shareCode: string;
+  // Null for rooms created before accounts existed, and for rooms whose owner
+  // deleted their account. Such rooms stay open to anyone with the code.
+  ownerId: string | null;
+  locked: boolean;
+};
+
+// A row in the "My rooms" list — enough to identify a room without loading it.
+export type RoomSummary = {
+  id: string;
+  shareCode: string;
+  courts: number;
+  locked: boolean;
+  createdAt: string;
 };

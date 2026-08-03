@@ -1,8 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// Test helpers for the RPC integration suite. Two clients:
+// Test helpers for the RPC + RLS integration suites. Three clients:
 //   - anonClient    → CALLS the RPCs, exercising the real RLS path (like the app).
 //   - serviceClient → bypasses RLS, used only for deterministic seed/teardown/reads.
+//   - authedClient  → a signed-in user, so `auth.uid()` is set in RLS policies.
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -31,6 +32,61 @@ export function serviceClient(): SupabaseClient {
   );
 }
 
+// A client carrying a real user's JWT, so `auth.uid()` resolves inside RLS
+// policies. Created through the admin API (pre-confirmed) and signed in on a
+// fresh anon-key client — the same path the browser app takes.
+export async function authedClient(
+  svc: SupabaseClient,
+): Promise<{ client: SupabaseClient; userId: string }> {
+  const email = `test-${uniqueSuffix()}@example.com`;
+  const password = "test-password-1234";
+
+  const { data, error } = await svc.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (error) throw error;
+
+  const client = createClient(
+    requireEnv("API_URL"),
+    requireEnv("ANON_KEY"),
+    clientOptions,
+  );
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) throw signInError;
+
+  return { client, userId: data.user.id };
+}
+
+// An anonymously signed-in client — the exact path "Create a room" takes. Such
+// users carry the `authenticated` role (with an is_anonymous claim), so they own
+// rooms and may lock them just like a Google-linked account.
+export async function anonSignedInClient(): Promise<{
+  client: SupabaseClient;
+  userId: string;
+}> {
+  const client = createClient(
+    requireEnv("API_URL"),
+    requireEnv("ANON_KEY"),
+    clientOptions,
+  );
+  const { data, error } = await client.auth.signInAnonymously();
+  if (error) throw error;
+  return { client, userId: data.user!.id };
+}
+
+export async function deleteUser(
+  svc: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { error } = await svc.auth.admin.deleteUser(userId);
+  if (error) throw error;
+}
+
 export type SeedPlayer = {
   name: string;
   skill: string;
@@ -53,18 +109,31 @@ export type PlayerRow = {
   court_slot: number | null;
 };
 
-// Unique share_code per call, collision-resistant across parallel test workers.
-function uniqueCode(): string {
-  return `T${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+// Collision-resistant across parallel test workers — used for both share codes
+// and test-user emails.
+function uniqueSuffix(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function uniqueCode(): string {
+  return `T${uniqueSuffix()}`.toUpperCase();
+}
+
+// `owner` / `locked` default to the pre-Phase-2 shape (an unowned, open room),
+// so the existing RPC suites keep exercising the permissive path unchanged.
 export async function createTestSession(
   svc: SupabaseClient,
   courts = 3,
+  opts: { ownerId?: string; locked?: boolean } = {},
 ): Promise<string> {
   const { data, error } = await svc
     .from("sessions")
-    .insert({ share_code: uniqueCode(), courts })
+    .insert({
+      share_code: uniqueCode(),
+      courts,
+      owner_id: opts.ownerId ?? null,
+      locked: opts.locked ?? false,
+    })
     .select("id")
     .single();
   if (error) throw error;
@@ -101,7 +170,13 @@ export async function getSession(svc: SupabaseClient, sessionId: string) {
     .eq("id", sessionId)
     .single();
   if (error) throw error;
-  return data as { id: string; share_code: string; courts: number };
+  return data as {
+    id: string;
+    share_code: string;
+    courts: number;
+    owner_id: string | null;
+    locked: boolean;
+  };
 }
 
 // Deleting the session cascades to its players (ON DELETE CASCADE).

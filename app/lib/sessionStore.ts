@@ -3,6 +3,7 @@
 // directly. Assembles the relational rows back into the in-memory SessionState
 // shape the UI renders from.
 
+import { ensureUser } from "./auth";
 import { supabase } from "./supabase";
 import type {
   CourtGame,
@@ -10,6 +11,7 @@ import type {
   NewPlayer,
   Player,
   PlayerStatus,
+  RoomSummary,
 } from "./types";
 
 // ---------- row shapes (snake_case, as stored) ----------
@@ -17,6 +19,8 @@ type SessionRow = {
   id: string;
   share_code: string;
   courts: number;
+  owner_id: string | null;
+  locked: boolean;
 };
 
 type PlayerRow = {
@@ -82,6 +86,8 @@ function assembleSession(session: SessionRow, rows: PlayerRow[]): LoadedSession 
     id: session.id,
     shareCode: session.share_code,
     courts: session.courts,
+    ownerId: session.owner_id,
+    locked: session.locked,
     players,
     queue,
     games,
@@ -89,13 +95,18 @@ function assembleSession(session: SessionRow, rows: PlayerRow[]): LoadedSession 
 }
 
 // ---------- session lifecycle ----------
+// Creating a room signs the organizer in anonymously first (see auth.ts), so the
+// room always has an owner — that's what makes it appear in "My rooms" and what
+// the lock is enforced against. Joining a room does NOT do this.
 export async function createSession(): Promise<{ id: string; shareCode: string }> {
+  const user = await ensureUser();
+
   // Retry on the (rare) share_code collision surfaced by the unique constraint.
   for (let attempt = 0; attempt < 5; attempt++) {
     const shareCode = generateShareCode();
     const { data, error } = await supabase
       .from("sessions")
-      .insert({ share_code: shareCode, courts: 3 })
+      .insert({ share_code: shareCode, courts: 3, owner_id: user.id })
       .select("id, share_code")
       .single();
 
@@ -110,7 +121,7 @@ export async function getSessionByCode(
 ): Promise<LoadedSession | null> {
   const { data: session, error } = await supabase
     .from("sessions")
-    .select("id, share_code, courts")
+    .select("id, share_code, courts, owner_id, locked")
     .eq("share_code", code)
     .maybeSingle();
   if (error) throw error;
@@ -125,6 +136,59 @@ export async function getSessionByCode(
   if (rowsError) throw rowsError;
 
   return assembleSession(session as SessionRow, (rows ?? []) as PlayerRow[]);
+}
+
+// Rooms owned by the signed-in user. RLS lets anyone SELECT any session (a
+// visitor must be able to resolve a share code), so the owner filter is applied
+// here rather than being implied by the policy.
+export async function listMyRooms(): Promise<RoomSummary[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("id, share_code, courts, locked, created_at")
+    .eq("owner_id", user.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    shareCode: r.share_code,
+    courts: r.courts,
+    locked: r.locked,
+    createdAt: r.created_at,
+  }));
+}
+
+// `locked` is ungranted at the column level, so this RPC is the only way to
+// change it; it re-checks ownership server-side and throws otherwise.
+export async function setRoomLock(
+  sessionId: string,
+  locked: boolean,
+): Promise<void> {
+  await run(
+    supabase.rpc("set_room_lock", {
+      p_session_id: sessionId,
+      p_locked: locked,
+    }),
+  );
+}
+
+// Owner-only (enforced by the sessions DELETE policy); cascades to players.
+export async function deleteRoom(sessionId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("sessions")
+    .delete()
+    .eq("id", sessionId)
+    .select("id");
+  if (error) throw error;
+  // A non-owner's delete matches no rows rather than erroring — surface that.
+  if (!data || data.length === 0) {
+    throw new Error("Only the room's owner can delete it.");
+  }
 }
 
 // Re-run `onChange` whenever this session's rows change (Postgres Changes).

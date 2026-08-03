@@ -11,10 +11,12 @@ import { Button, Card } from "./ui";
 function GamesCounter({
   value,
   playerName,
+  disabled = false,
   onChange,
 }: {
   value: number;
   playerName: string;
+  disabled?: boolean;
   onChange: (value: number) => void;
 }) {
   // null = show the committed prop value; a string = the user is mid-edit.
@@ -37,7 +39,8 @@ function GamesCounter({
       <button
         type="button"
         aria-label={`Decrease games for ${playerName}`}
-        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-r border-gray-200 font-medium"
+        disabled={disabled}
+        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-r border-gray-200 font-medium disabled:opacity-40"
         onClick={() => step(-1)}
       >
         −
@@ -48,7 +51,8 @@ function GamesCounter({
         inputMode="numeric"
         pattern="[0-9]*"
         aria-label={`Games played by ${playerName}`}
-        className="w-8 h-full text-center text-xs font-semibold bg-transparent focus:outline-none"
+        disabled={disabled}
+        className="w-8 h-full text-center text-xs font-semibold bg-transparent focus:outline-none disabled:opacity-60"
         value={draft ?? String(value)}
         onChange={(e) => {
           const v = e.target.value;
@@ -63,7 +67,8 @@ function GamesCounter({
       <button
         type="button"
         aria-label={`Increase games for ${playerName}`}
-        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-l border-gray-200 font-medium"
+        disabled={disabled}
+        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-l border-gray-200 font-medium disabled:opacity-40"
         onClick={() => step(1)}
       >
         +
@@ -74,6 +79,7 @@ function GamesCounter({
 
 export function PlayerList({
   availablePlayers,
+  readOnly = false,
   onAdd,
   onAutoPick,
   onBatchAdd,
@@ -83,6 +89,8 @@ export function PlayerList({
   onUpdateGamesPlayed,
 }: {
   availablePlayers: Player[];
+  // See the note in CourtBoard — set when the room is locked to a non-owner.
+  readOnly?: boolean;
   onAdd: () => void;
   onAutoPick: () => void;
   onBatchAdd: () => void;
@@ -97,7 +105,7 @@ export function PlayerList({
     <Card className="md:col-span-2 p-4">
       <div className="flex justify-between mb-3">
         <h2 className="font-semibold">Players</h2>
-        <div className="flex space-x-2">
+        <div className={readOnly ? "hidden" : "flex space-x-2"}>
           <Button
             className="bg-green-600"
             onClick={onAutoPick}
@@ -190,6 +198,7 @@ export function PlayerList({
                 <GamesCounter
                   value={p.gamesPlayed}
                   playerName={p.name}
+                  disabled={readOnly}
                   onChange={(value) => onUpdateGamesPlayed(p.id, value)}
                 />
                 <span className="ml-2 text-[10px] uppercase font-bold text-gray-500 tracking-tight">
@@ -197,7 +206,7 @@ export function PlayerList({
                 </span>
               </div>
             </div>
-            <div className="flex space-x-2">
+            <div className={readOnly ? "hidden" : "flex space-x-2"}>
               <Button onClick={() => onQueue(p)}>Queue</Button>
               <Button className="bg-red-600" onClick={() => onDeletePlayer(p)}>
                 Delete

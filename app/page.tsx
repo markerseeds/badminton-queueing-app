@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { AccountBar } from "./components/AccountBar";
 import { Button, Card, Input } from "./components/ui";
 import { createSession } from "./lib/sessionStore";
 
@@ -30,7 +31,9 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-4">
+      <AccountBar />
+
       <Card className="p-8 w-full max-w-md space-y-6">
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold">

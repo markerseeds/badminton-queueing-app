@@ -118,6 +118,11 @@ export function useSession(code: string) {
         if (newCourts === s.courts) return;
         await store.setCourts(s.id, newCourts);
       }),
+
+    // Owner-only; the RPC rejects anyone else, and `act` surfaces that as the
+    // usual error banner.
+    setLocked: (locked: boolean) =>
+      act((s) => store.setRoomLock(s.id, locked)),
   };
 
   return {

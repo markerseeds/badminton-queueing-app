@@ -8,12 +8,14 @@ import { ConfirmationModal } from "../../components/ConfirmationModal";
 import { CourtBoard } from "../../components/CourtBoard";
 import { PlayerList } from "../../components/PlayerList";
 import { QueuePanel } from "../../components/QueuePanel";
+import { useAuth } from "../../hooks/useAuth";
 import { useSession } from "../../hooks/useSession";
 import { getAvailablePlayers } from "../../lib/logic";
 import type { Player } from "../../lib/types";
 
 export function RoomClient({ code }: { code: string }) {
   const { state, status, error, dismissError, actions } = useSession(code);
+  const { user } = useAuth();
 
   const [showModal, setShowModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -101,6 +103,13 @@ export function RoomClient({ code }: { code: string }) {
   const startDisabled =
     state.queue.length < 4 || state.games.every((g) => g.players.length > 0);
 
+  // Mirrors the server-side predicate in `session_is_editable()`. The
+  // `ownerId !== null` arm matters: an ownerless room (created before accounts,
+  // or whose owner deleted their account) stays open to everyone, so a stale
+  // lock can't strand a club mid-night.
+  const isOwner = state.ownerId !== null && state.ownerId === user?.id;
+  const readOnly = state.locked && state.ownerId !== null && !isOwner;
+
   return (
     <div className="p-6 space-y-6">
       {/* ROOM HEADER */}
@@ -111,14 +120,34 @@ export function RoomClient({ code }: { code: string }) {
             {state.shareCode}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={copyLink}
-          className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
-        >
-          {copied ? "Link copied!" : "Copy invite link"}
-        </button>
+        <div className="flex items-center gap-2">
+          {isOwner && (
+            <button
+              type="button"
+              aria-pressed={state.locked}
+              onClick={() => actions.setLocked(!state.locked)}
+              className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
+            >
+              <span aria-hidden="true">{state.locked ? "🔒" : "🔓"}</span>{" "}
+              {state.locked ? "Locked — only you can edit" : "Lock to just me"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={copyLink}
+            className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
+          >
+            {copied ? "Link copied!" : "Copy invite link"}
+          </button>
+        </div>
       </div>
+
+      {readOnly && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2 rounded-lg">
+          <span aria-hidden="true">🔒</span> View only — the organizer has locked
+          this room.
+        </div>
+      )}
 
       {error && (
         <div
@@ -142,6 +171,7 @@ export function RoomClient({ code }: { code: string }) {
       <CourtBoard
         games={state.games}
         courts={state.courts}
+        readOnly={readOnly}
         onChangeCourts={actions.changeCourts}
         onEndGame={(courtNumber) => confirmEndGame(courtNumber)}
       />
@@ -150,12 +180,14 @@ export function RoomClient({ code }: { code: string }) {
         <QueuePanel
           queue={state.queue}
           startDisabled={startDisabled}
+          readOnly={readOnly}
           onStartGame={actions.startGame}
           onShuffleTop={actions.shuffleTop}
           onRemoveFromQueue={actions.removeFromQueue}
         />
         <PlayerList
           availablePlayers={availablePlayers}
+          readOnly={readOnly}
           onAdd={() => setShowModal(true)}
           onAutoPick={actions.autoPick}
           onBatchAdd={() => setShowBatchModal(true)}

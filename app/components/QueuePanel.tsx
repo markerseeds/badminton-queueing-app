@@ -6,12 +6,15 @@ import { Button, Card } from "./ui";
 export function QueuePanel({
   queue,
   startDisabled,
+  readOnly = false,
   onStartGame,
   onShuffleTop,
   onRemoveFromQueue,
 }: {
   queue: Player[];
   startDisabled: boolean;
+  // See the note in CourtBoard — set when the room is locked to a non-owner.
+  readOnly?: boolean;
   onStartGame: () => void;
   onShuffleTop: () => void;
   onRemoveFromQueue: (player: Player) => void;
@@ -20,7 +23,7 @@ export function QueuePanel({
     <Card className="p-4">
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold">Queue</h2>
-        {queue.length >= 4 && (
+        {queue.length >= 4 && !readOnly && (
           <button
             type="button"
             onClick={onShuffleTop}
@@ -44,7 +47,11 @@ export function QueuePanel({
         )}
       </div>
 
-      <Button onClick={onStartGame} className="mb-3 w-full" disabled={startDisabled}>
+      <Button
+        onClick={onStartGame}
+        className="mb-3 w-full"
+        disabled={startDisabled || readOnly}
+      >
         Start Game
       </Button>
 
@@ -79,6 +86,7 @@ export function QueuePanel({
             </div>
             <Button
               className="bg-gray-600 px-2 py-0.5 text-xs"
+              disabled={readOnly}
               onClick={() => onRemoveFromQueue(p)}
             >
               Remove
