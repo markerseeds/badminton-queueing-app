@@ -86,6 +86,7 @@ export function PlayerList({
   onDeleteAll,
   onQueue,
   onDeletePlayer,
+  onEditPlayer,
   onUpdateGamesPlayed,
 }: {
   availablePlayers: Player[];
@@ -97,6 +98,7 @@ export function PlayerList({
   onDeleteAll: () => void;
   onQueue: (player: Player) => void;
   onDeletePlayer: (player: Player) => void;
+  onEditPlayer: (player: Player) => void;
   onUpdateGamesPlayed: (playerId: string, value: number) => void;
 }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -191,8 +193,35 @@ export function PlayerList({
         {availablePlayers.map((p) => (
           <Card key={p.id} className="p-3 flex justify-between items-center">
             <div>
-              <div>
-                {p.name} ({p.skill})
+              <div className="flex items-center gap-1.5">
+                <span>
+                  {p.name} ({p.skill})
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Edit ${p.name}`}
+                  className={
+                    readOnly
+                      ? "hidden"
+                      : "text-gray-500 hover:text-gray-900 transition-colors"
+                  }
+                  onClick={() => onEditPlayer(p)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                </button>
               </div>
               <div className="flex items-center mt-2">
                 <GamesCounter

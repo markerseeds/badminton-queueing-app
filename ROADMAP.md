@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-08-03_
+> _Last reviewed: 2026-08-08_
 
 ---
 
@@ -292,6 +292,55 @@ Email magic-link remains a deliberate later addition.
 
 ---
 
+### Phase 2.5 — Edit player name & skill `✅`  *(inserted ahead of Phase 3 — done 2026-08-08)*
+
+**Goal:** let an organizer correct a player's name or skill band in place, instead of deleting and
+re-adding them.
+
+**Why it jumped the queue.** Slotted in before Phase 3 deliberately, and it earns the slot: skill is
+not cosmetic. `getSkillIndex` drives the ±1 band window in `pickFourPlayers`, so a player entered at
+the wrong level distorts who they get matched with for the rest of the night. The only remedy was
+delete-and-re-add — which discards `games_played`, the very number the fewest-games-first auto-pick
+ordering runs on. A typo therefore cost you either fair matching or fair rotation, with no third
+option. Cheap to fix, and it makes the tool feel finished in a way that matters before anyone is
+asked to pay for it.
+
+**Scope**
+
+- A pencil affordance on each row of the Players panel, opening a small **Edit Player** dialog
+  (name field + skill dropdown, Cancel/Save).
+- `updatePlayer` in `sessionStore` and a matching `useSession` action.
+- `normalizePlayerName` / `normalizeSkill` in `lib/logic.ts`, unit-tested.
+
+**Done when:** an organizer can rename a player and change their skill without losing their games
+count; the change reaches other devices; a locked room refuses the edit.
+
+**✅ Done (2026-08-08):** pencil → `EditPlayerModal` (a near-copy of `AddPlayerModal`, seeded from
+the player), `sessionStore.updatePlayer`, and a `useSession.updatePlayer` action that re-normalizes
+its input and short-circuits a no-op save. **No migration was needed** — and confirming that was most
+of the analysis. Unlike `sessions`, whose UPDATE is revoked and re-granted on `(courts, updated_at)`
+only, `players` carries a plain full-column grant gated solely by the `players_write` policy's
+`session_is_editable(session_id)` predicate, so `name` and `skill` were already writable in an
+unlocked room and already blocked in a locked one. Realtime needed nothing either.
+
+**Two subtleties worth remembering.** (1) `Player.skill` is typed `string`, not the `Skill` union, so
+rows can hold values outside `SKILLS` — and a native `<select>` handed an unknown value silently
+reports its *first* option, meaning a legacy player would have been demoted to "new" just by opening
+and saving the dialog. The modal prepends the current value to the option list when it isn't
+recognized, and `normalizeSkill` returns an unknown skill unchanged rather than coercing it.
+(2) `updatePlayer` uses the `.select("id")`-and-throw idiom from `deleteRoom` rather than a bare
+`run()`: a lock-blocked UPDATE matches no rows *without* erroring, so a rename would otherwise appear
+to save and then quietly revert on the next reload.
+
+**TDD'd**: the pure-logic tests were written first and watched fail. Two RLS cases added to
+`tests/rls/room_ownership.test.ts` — a stranger renaming in an unlocked room (asserting
+`games_played` survives, which is the whole point) and being blocked in a locked one (0 rows, no
+error — the usual UPDATE semantics).
+
+**Effort:** ~0.5 weekend.
+
+---
+
 ### Phase 3 — Free vs Paid + payments `⬜`
 
 **Goal:** actually sell the Pro unlock (C4).
@@ -359,6 +408,7 @@ Pro features are genuinely worth paying for.
 | 0 | Foundations & safety (DB-agnostic) | A clean base + easy migration | ~2 wknds | ✅ |
 | 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ✅ |
 | 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ✅ |
+| 2.5 | Edit player name & skill _(inserted)_ | Fix a typo without losing games played | ~0.5 wknd | ✅ |
 | 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
@@ -402,6 +452,14 @@ Track choices here so the "why" isn't lost.
   both be able to queue players, and owner-only editing would make the organizer a bottleneck for the
   whole session. Owners get a per-room **lock** that restricts writes to them alone — a real security
   ceiling when wanted, and a natural Pro feature later. _(2026-08-03)_
+- [x] **Editing a player — pencil opens a modal, not an inline field.** The games counter on the
+  same row edits inline, so inline was the obvious parallel — but the row is a `p-3` card with
+  Queue/Delete already on it, two per line at `sm:`, and a text field plus a skill dropdown don't fit
+  on a phone. The deciding argument was semantics, not space: commit-on-blur is unambiguous for a
+  number, but for a `<select>` it isn't, and a mistyped rename with no Cancel is a worse failure than
+  a mistyped games count. Scope is the **Players panel only** — queued and on-court players aren't
+  listed there, so they stay uneditable until their game ends. Revisit if that bites in practice.
+  _(2026-08-08)_
 - [x] **Migrations on deploy** — auto-applied on Vercel **production** builds via a gated step
   (`supabase db push`); preview/local builds skip so they never touch prod. _(2026-07-04)_
 - [ ] **One-time vs subscription** — revisit after launch, once you see real usage costs (and the Supabase Pro $25/mo threshold).
@@ -410,6 +468,28 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-08-08** — **Phase 2.5 (inserted): edit a player's name and skill.** A pencil on each Players
+  row opens an **Edit Player** dialog — name field, skill dropdown, Cancel/Save — so a typo or a
+  wrong skill band no longer means delete-and-re-add. That mattered because re-adding resets
+  `games_played`, which is what the fewest-games-first auto-pick ordering runs on, while a wrong
+  skill distorts the ±1 band window in `pickFourPlayers` all night: previously you could fix the
+  matching or keep the rotation fair, never both. **No migration** — `players` turns out to carry a
+  plain full-column UPDATE grant gated only by `session_is_editable(session_id)`, unlike `sessions`
+  whose UPDATE is column-restricted to `(courts, updated_at)`; `name`/`skill` were already writable
+  in an unlocked room and already blocked in a locked one, and Realtime needed nothing. **The subtle
+  part was the `<select>`**: `Player.skill` is a plain `string` on purpose so legacy rows can hold
+  values outside `SKILLS`, and a native select handed an unknown value silently reports its first
+  option — so merely opening and saving the dialog would have demoted such a player to "new". The
+  modal prepends the current value when it isn't recognized, and `normalizeSkill` returns an unknown
+  skill unchanged instead of coercing it. `updatePlayer` also uses `deleteRoom`'s
+  `.select("id")`-and-throw idiom rather than a bare `run()`, because a lock-blocked UPDATE matches
+  no rows *without* erroring — a rename would otherwise appear to save and then revert on reload.
+  **TDD'd**: 8 pure-logic tests written and watched fail before the helpers existed, plus 2 RLS cases
+  (a stranger renaming in an unlocked room, asserting `games_played` survives; and being blocked in a
+  locked one). 59 tests pass, up from 49; `tsc` / `eslint` clean. New: `EditPlayerModal.tsx`,
+  `tests/logic/player_details.test.ts`. **Deliberately not done:** editing a player who is queued or
+  on court — they aren't listed in the Players panel, and putting a pencil on the courtside display
+  would clutter the view it exists to keep readable.
 - **2026-08-03** — **Phase 2: accounts & ownership.** Rooms now belong to someone. Tapping "Create a
   room" signs the organizer in **anonymously** (`ensureUser` in the new `lib/auth.ts`) and stamps
   `owner_id`, so a room has an owner from the first tap with no sign-in wall; `linkIdentity` later

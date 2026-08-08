@@ -65,6 +65,30 @@ describe("room ownership RLS", () => {
     expect(deleted).toHaveLength(1);
   });
 
+  it("lets a stranger rename and re-skill a player in an unlocked room", async () => {
+    const owner = await authedClient(svc);
+    ownerId = owner.userId;
+    sessionId = await createTestSession(svc, 3, { ownerId: owner.userId });
+    const [seeded] = await seedPlayers(svc, sessionId, [
+      { name: "Mrak", skill: "new", games_played: 5 },
+    ]);
+
+    const { data: updated, error } = await anon
+      .from("players")
+      .update({ name: "Mark", skill: "intermediate" })
+      .eq("id", seeded.id)
+      .select();
+    expect(error).toBeNull();
+    expect(updated).toHaveLength(1);
+
+    const rows = await getPlayers(svc, sessionId);
+    expect(rows[0].name).toBe("Mark");
+    expect(rows[0].skill).toBe("intermediate");
+    // The whole point of editing over delete-and-re-add: the count survives, so
+    // the player keeps their place in the fewest-games-first auto-pick order.
+    expect(rows[0].games_played).toBe(5);
+  });
+
   it("lets a stranger change the court count in an unlocked room", async () => {
     const owner = await authedClient(svc);
     ownerId = owner.userId;
@@ -111,6 +135,31 @@ describe("room ownership RLS", () => {
     const rows = await getPlayers(svc, sessionId);
     expect(rows).toHaveLength(1);
     expect(rows[0].games_played).toBe(0);
+  });
+
+  it("blocks a stranger renaming a player in a locked room", async () => {
+    const owner = await authedClient(svc);
+    ownerId = owner.userId;
+    sessionId = await createTestSession(svc, 3, {
+      ownerId: owner.userId,
+      locked: true,
+    });
+    const [seeded] = await seedPlayers(svc, sessionId, [
+      { name: "Ana", skill: "advanced" },
+    ]);
+
+    // No error — the policy simply matches no rows (see the header note).
+    const { data: updated, error } = await anon
+      .from("players")
+      .update({ name: "Hijacked", skill: "new" })
+      .eq("id", seeded.id)
+      .select();
+    expect(error).toBeNull();
+    expect(updated).toHaveLength(0);
+
+    const rows = await getPlayers(svc, sessionId);
+    expect(rows[0].name).toBe("Ana");
+    expect(rows[0].skill).toBe("advanced");
   });
 
   it("blocks a stranger's court change in a locked room", async () => {

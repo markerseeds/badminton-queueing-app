@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   clampGamesPlayed,
   getAvailablePlayers,
+  normalizePlayerName,
+  normalizeSkill,
   pickFourPlayers,
 } from "../lib/logic";
 import * as store from "../lib/sessionStore";
@@ -85,6 +87,17 @@ export function useSession(code: string) {
     deleteAll: () => act((s) => store.deleteAllPlayers(s.id)),
     setGamesPlayed: (playerId: string, value: number) =>
       act(() => store.setGamesPlayed(playerId, clampGamesPlayed(value))),
+    updatePlayer: (playerId: string, details: { name: string; skill: string }) =>
+      act(async (s) => {
+        // Re-normalize rather than trust the form, as setGamesPlayed re-clamps.
+        const name = normalizePlayerName(details.name);
+        const skill = normalizeSkill(details.skill);
+        if (!name) return;
+        // Cheap early-out: `act` reloads the whole session after every write.
+        const current = s.players.find((p) => p.id === playerId);
+        if (current && current.name === name && current.skill === skill) return;
+        await store.updatePlayer(playerId, { name, skill });
+      }),
 
     addToQueue: (player: Player) =>
       act(async (s) => {

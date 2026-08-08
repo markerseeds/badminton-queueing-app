@@ -270,6 +270,30 @@ export async function setGamesPlayed(
   );
 }
 
+// Rename a player and/or change their skill band. Single row, so PostgREST
+// direct — no RPC needed. `players` has a full-column UPDATE grant gated only by
+// the `session_is_editable(session_id)` policy, unlike `sessions` whose UPDATE is
+// column-restricted to (courts, updated_at).
+export async function updatePlayer(
+  playerId: string,
+  details: { name: string; skill: string },
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("players")
+    .update({ name: details.name, skill: details.skill })
+    .eq("id", playerId)
+    .select("id");
+  if (error) throw error;
+  // A write blocked by the room lock matches no rows rather than erroring (see
+  // `deleteRoom`). The edit control is already hidden in read-only mode, so this
+  // only fires if the owner locks the room while someone has the modal open —
+  // but there, a rename that appears to save and then reverts is worse than an
+  // honest error.
+  if (!data || data.length === 0) {
+    throw new Error("Could not update this player — the room may be locked.");
+  }
+}
+
 // ---------- queue ----------
 // Append players to the back of the queue, preserving the given order.
 // The starting position is computed inside the RPC's transaction, so two

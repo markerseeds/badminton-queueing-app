@@ -6,6 +6,7 @@ import { AddPlayerModal } from "../../components/AddPlayerModal";
 import { BatchAddModal } from "../../components/BatchAddModal";
 import { ConfirmationModal } from "../../components/ConfirmationModal";
 import { CourtBoard } from "../../components/CourtBoard";
+import { EditPlayerModal } from "../../components/EditPlayerModal";
 import { PlayerList } from "../../components/PlayerList";
 import { QueuePanel } from "../../components/QueuePanel";
 import { useAuth } from "../../hooks/useAuth";
@@ -22,6 +23,7 @@ export function RoomClient({ code }: { code: string }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (status === "loading") {
@@ -194,6 +196,7 @@ export function RoomClient({ code }: { code: string }) {
           onDeleteAll={confirmDeleteAll}
           onQueue={actions.addToQueue}
           onDeletePlayer={confirmDeletePlayer}
+          onEditPlayer={setEditingPlayer}
           onUpdateGamesPlayed={actions.setGamesPlayed}
         />
       </div>
@@ -205,6 +208,17 @@ export function RoomClient({ code }: { code: string }) {
             setShowModal(false);
           }}
           onCancel={() => setShowModal(false)}
+        />
+      )}
+
+      {editingPlayer && (
+        <EditPlayerModal
+          player={editingPlayer}
+          onSubmit={(details) => {
+            actions.updatePlayer(editingPlayer.id, details);
+            setEditingPlayer(null);
+          }}
+          onCancel={() => setEditingPlayer(null)}
         />
       )}
 

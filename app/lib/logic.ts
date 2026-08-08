@@ -97,6 +97,24 @@ export function parseGamesPlayedInput(raw: string): number {
   return clampGamesPlayed(parseInt(raw, 10));
 }
 
+// Trim a player name typed into the add or edit form. An empty result means
+// "no name" — callers treat that as a reason not to write, so a rename can
+// never blank out a player.
+export function normalizePlayerName(raw: string): string {
+  return raw.trim();
+}
+
+// Normalize a skill typed or picked in the edit form, the same way
+// `parseBatchInput` does for imported rows: lowercase it if it's one we know.
+// An unrecognized value is returned as-is rather than coerced to SKILLS[0] —
+// `Player.skill` is a plain string on purpose, and silently demoting a legacy
+// value to "new" just because someone opened the edit modal would lose data.
+export function normalizeSkill(raw: string): string {
+  const trimmed = raw.trim();
+  const lowered = trimmed.toLowerCase();
+  return SKILLS.includes(lowered) ? lowered : trimmed;
+}
+
 // Players who are neither on a court nor in the queue — i.e. selectable.
 export function getAvailablePlayers(state: SessionState): Player[] {
   const playing = new Set(
