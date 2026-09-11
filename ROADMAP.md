@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-08-08_
+> _Last reviewed: 2026-09-11_
 
 ---
 
@@ -345,10 +345,41 @@ error — the usual UPDATE semantics).
 
 **Goal:** actually sell the Pro unlock (C4).
 
+**Before starting.** The identity side is settled in §7 — see _Paying requires a real account_, _When
+the sign-in happens_ and _Rooms follow the sign-in_. Three structural things are easy to get wrong
+and cheaper to settle first:
+
+- **Entitlement gates ask a different question than every policy you have.** `session_is_editable()`
+  asks "may the *caller* write here?". A court cap asks "what plan does this room's *owner* have?" —
+  with no reference to `auth.uid()` at all, because the person changing courts is usually a stranger
+  holding the code, and `set_courts` stays open to them on purpose. That needs a *second*
+  `SECURITY DEFINER` predicate shaped like `session_is_editable`, not a clause bolted onto it. Get
+  this wrong and the gates end up client-side, one devtools call from being bypassed.
+- **A player cap has no server-side seam yet.** `set_courts` is an RPC a cap can live inside;
+  `addPlayer` / `addPlayers` are plain PostgREST inserts gated only by `players_write`, and the
+  batch-add path makes a count-then-insert racy. It wants a `BEFORE INSERT` trigger or a `with check`
+  predicate — decide which before writing the gate.
+- **Close the ownerless-room bypass.** `sessions_insert` still permits `owner_id is null` ("for a
+  signed-out visitor"), but `createSession` always calls `ensureUser()` first, so the app never uses
+  that arm. Once every cap keys off `owner_id`, an ownerless room is a room no cap applies to and one
+  anyone can create straight against the API. Drop the arm from the INSERT policy; keep it in the
+  *editability* predicates, where it is still right.
+
+Two supporting pieces are also missing rather than merely unfinished: there is no `supabase/functions/`
+yet (and [vercel-migrate.mjs](scripts/vercel-migrate.mjs) only runs `db push`, so function deploys
+need their own step), and **error monitoring belongs before the first sale, not in Phase 5** — a
+webhook that 500s is a customer who paid and got nothing. Pair it with a `webhook_events` table keyed
+on the provider's event id; providers retry, so idempotency is a requirement, and keeping the raw
+payloads turns "I paid and nothing happened" into a two-minute lookup.
+
 **Scope**
 
 - **Entitlement model:** a `plan` column (or `entitlements` table) on the user, read via
-  RLS-protected query to gate features (a field, not a boolean — future-proofing).
+  RLS-protected query to gate features (a field, not a boolean — future-proofing). Note that
+  `sessions_select` is `using (true)`, so anything stored on `sessions` is world-readable: a tier
+  label there is fine and in fact necessary (a stranger's browser must know the room's tier to render
+  gates honestly, the way `readOnly` mirrors `session_is_editable`), but provider customer ids and
+  receipt data belong in a separate table with an owner-only policy.
 - Build the **feature gates** for the split in §3 (court/player limits, multiple sessions, etc.).
 - **Checkout:** Lemon Squeezy / Paddle (recommended) or Stripe; a **Supabase Edge Function** webhook
   verifies the purchase and sets `plan: "pro"`.
@@ -443,6 +474,34 @@ Track choices here so the "why" isn't lost.
   `linkIdentity` later upgrades that same user id to Google without orphaning their rooms. Only room
   *creators* get an `auth.users` row — joiners stay unauthenticated, so MAU tracks organizers, not
   players. _(2026-08-03)_
+- [x] **Paying requires a real account** — **anonymous accounts are permanently free tier.** An
+  anonymous user is a real `auth.users` row with no email and no credential; its only proof of
+  identity is a refresh token in one browser's `localStorage`. Attaching a one-time purchase to that
+  means the purchase dies with the browser profile — cleared site data, a new phone, or Safari's ITP
+  evicting script-written storage after ~7 days idle — and nothing can recover it afterwards, because
+  the merchant knows an email the database has never seen. There is no join key. So the invariant is
+  **`plan = 'pro'` implies `is_anonymous = false`**, asserted in the checkout Edge Function and not
+  only in the UI, so a replayed webhook or a hand-made checkout URL can't violate it. _(2026-09-11)_
+- [x] **When the sign-in happens — at the paywall, just-in-time.** No earlier nudge: anonymous
+  organizers use the app exactly as they do today until they hit a gate. Accepted cost: the entire
+  identity chain (OAuth redirect → `linkIdentity` → possible fallback → room transfer) then runs at
+  the worst possible moment — courtside, mid-session, wanting a third court *now* — so a hiccup there
+  costs the sale rather than costing nothing. Chosen anyway, to keep the zero-friction create path
+  undiluted. Revisit if conversion at the gate turns out poor. _(2026-09-11)_
+- [x] **Rooms follow the sign-in** — when `linkIdentity` falls back to a plain sign-in (because the
+  Google account already exists as its own user), every room owned by the discarded anonymous id
+  moves to the account just signed into. **Not keyed off the share code** — a code proves *access*,
+  not ownership, so that would be exactly the hijack the column grants exist to block. Instead the
+  anonymous user writes a single-use, expiring claim ticket *before* the redirect (RLS forces
+  `from_user_id = auth.uid()`, so the row's existence is the proof); afterwards a `SECURITY DEFINER`
+  RPC redeems the nonce and reassigns `owner_id`. `SECURITY DEFINER` is forced regardless — `owner_id`
+  is ungranted at the column level, so PostgREST cannot write it at all. Moves **all** her rooms, not
+  just the one she's standing in, and runs before checkout, so there is no window in which she is Pro
+  but the room in front of her is not. _(2026-09-11)_
+- [ ] **What plan does an ownerless room get?** `owner_id` is `ON DELETE SET NULL`, so a Pro owner
+  deleting their account leaves rooms with no owner and therefore no plan. Ownerless rooms already
+  fall back to *open* for editing; falling back to *free* would instead truncate a club mid-night
+  from 6 courts to 2. Decide alongside the free-tier limits.
 - [ ] **Free-tier limits** — exact court/player/session caps (validate with real use).
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
 - [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
