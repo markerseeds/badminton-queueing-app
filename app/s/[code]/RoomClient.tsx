@@ -43,10 +43,26 @@ export function RoomClient({ code }: { code: string }) {
 
   if (status === "loading") {
     return (
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-        <div className="h-20 animate-pulse rounded-(--bq-radius) bg-surface-2" />
-        <div className="h-52 animate-pulse rounded-(--bq-radius) bg-surface-2" />
-        <span className="sr-only">Loading room…</span>
+      <div
+        role="status"
+        className="mx-auto flex max-w-5xl flex-col gap-4 p-4"
+      >
+        <p className="muted">Loading room…</p>
+        {/* Shaped like what it replaces — the share strip, then the court
+            board. Bars on `.card`, so the placeholder sits on the real surface
+            instead of the recessed one it used to vanish into. */}
+        <div aria-hidden="true" className="flex flex-col gap-4">
+          <div className="card flex h-20 items-center gap-3 p-4">
+            <div className="skel h-3 w-16" />
+            <div className="skel h-5 w-28" />
+            <div className="skel ml-auto size-11 shrink-0 rounded-(--bq-radius-sm)" />
+          </div>
+          <div className="card flex h-52 flex-col gap-3 p-4">
+            <div className="skel h-3 w-16" />
+            <div className="skel h-4 w-40" />
+            <div className="skel h-4 w-36" />
+          </div>
+        </div>
       </div>
     );
   }

@@ -49,6 +49,13 @@
   --bq-line: #dfe4ea;
   --bq-line-2: #c8d0d9;
 
+  /* Loading placeholders: the bar fill, and the highlight that sweeps across
+     it. A step *above* the card a placeholder sits on, never below — the old
+     skeleton used the recessed `surface-2` and disappeared into the dark
+     ground entirely. */
+  --bq-skel: #e2e8ee;
+  --bq-skel-hi: #f6f9fc;
+
   /* The single accent. Neutrals above are biased cool toward it on purpose. */
   --bq-accent: #14607a;
   --bq-on-accent: #ffffff;
@@ -114,6 +121,11 @@
     --bq-line: #28323a;
     --bq-line-2: #37434d;
 
+    /* Lifted well clear of the #171E24 card. A placeholder has to be legible
+       with no animation at all — see the reduced-motion note on .skel. */
+    --bq-skel: #333f4a;
+    --bq-skel-hi: #4a5865;
+
     /* Lifted, not inverted: #14607A on a dark ground fails contrast. */
     --bq-accent: #4fbfd9;
     --bq-on-accent: #08171c;
@@ -154,6 +166,11 @@
 
   --bq-line: #28323a;
   --bq-line-2: #37434d;
+
+  /* Lifted well clear of the #171E24 card. A placeholder has to be legible
+     with no animation at all — see the reduced-motion note on .skel. */
+  --bq-skel: #333f4a;
+  --bq-skel-hi: #4a5865;
 
   /* Lifted, not inverted: #14607A on a dark ground fails contrast. */
   --bq-accent: #4fbfd9;
@@ -438,6 +455,66 @@
     border: 1px solid var(--bq-line);
     border-radius: var(--bq-radius);
     box-shadow: var(--bq-shadow);
+  }
+
+  /* --- Loading placeholders --------------------------------------------- */
+
+  /* The app's one animation, kept beside its only consumer. */
+  @keyframes bq-skel-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  /* A placeholder bar. Callers supply the shape as utilities (`h-4 w-22`);
+     what lives here is the part no utility can express.
+
+     The fill has to carry the state ON ITS OWN, because the sweep below is
+     removed under reduced motion. That is why this is its own token and not
+     `--bq-surface-2`: a placeholder sits on a bordered `--bq-surface` row, and
+     the recessed grey was a 1.2:1 step against it in dark — i.e. an empty box,
+     which is exactly the bug this replaces. `--bq-skel` / `--bq-skel-hi` stay
+     out of @theme deliberately: a `bg-skel` utility would let someone paint a
+     static box that looks like a loading bar without being one. */
+  .skel {
+    position: relative;
+    overflow: hidden;
+    border-radius: 4px;
+    background: var(--bq-skel);
+  }
+
+  /* A travelling sheen, not Tailwind's `animate-pulse`: pulse animates opacity
+     only, and dipping a near-black bar to 50% over a near-black page is close
+     to imperceptible. A moving edge is legible at contrast a global fade is
+     not. Transform, so it stays on the compositor and never touches layout.
+     The outer stops are the bar colour rather than `transparent` — premultiplied
+     interpolation would otherwise darken the ends of the sweep. */
+  .skel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      var(--bq-skel) 0%,
+      var(--bq-skel-hi) 50%,
+      var(--bq-skel) 100%
+    );
+    animation: bq-skel-sweep 1.4s ease-in-out infinite;
+  }
+
+  /* The global reduce block in @layer base only shortens durations, which does
+     not stop an infinite animation — it samples it at an arbitrary point every
+     frame, leaving a stray bright patch or a flicker. Remove the sheen instead;
+     the fill and the visible caption carry the state for these users. `display`
+     is untouched by that block's `animation-duration: !important`, so this is
+     not a specificity fight. */
+  @media (prefers-reduced-motion: reduce) {
+    .skel::after {
+      display: none;
+    }
   }
 
   /* --- Pills and badges ------------------------------------------------- */

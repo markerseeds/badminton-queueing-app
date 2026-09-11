@@ -23,8 +23,18 @@ export function AccountBar() {
   } = useAuth();
 
   // Reserve the row's height while auth resolves, so the page below doesn't
-  // jump once it does.
-  if (loading) return <div aria-hidden="true" className="h-9" />;
+  // jump once it does — and show a placeholder in it, or this strip is the one
+  // blank patch left while everything under it is visibly loading.
+  //
+  // Stays aria-hidden: the pages this sits on announce their own wait through a
+  // role="status", and a second voice for a 36px strip would only compete.
+  if (loading) {
+    return (
+      <div aria-hidden="true" className="flex h-9 items-center justify-end">
+        <div className="skel h-4 w-40" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">

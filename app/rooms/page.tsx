@@ -18,6 +18,31 @@ function formatDate(iso: string): string {
   });
 }
 
+// Stands in for the room list, and reuses `.roomrow` itself — so the
+// placeholder can't drift from the real row's surface, border or 4rem height,
+// and nothing below it shifts when the rows arrive. The bars are sized to the
+// content they're waiting on: an 8-char share code at 1rem mono/0.08em is
+// ~88px, the "3 courts · 11 Sep 2026" line ~120px, and the trailing square is
+// the 44px IconButton.
+function RoomsSkeleton() {
+  return (
+    <div role="status" className="flex flex-col gap-2">
+      <p className="muted">Loading your rooms…</p>
+      <ul aria-hidden="true" className="flex flex-col gap-2">
+        {[0, 1].map((i) => (
+          <li key={i} className="roomrow">
+            <div className="min-w-0 flex-1">
+              <div className="skel h-4 w-22" />
+              <div className="skel mt-2 h-3 w-30" />
+            </div>
+            <div className="skel size-11 shrink-0 rounded-(--bq-radius-sm)" />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function MyRoomsPage() {
   const { user, isSignedIn, loading: authLoading } = useAuth();
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
@@ -87,7 +112,21 @@ export default function MyRoomsPage() {
         {error && (
           <div role="alert" className="banner banner-danger">
             <WarningIcon size={18} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
+            <span className="flex-1">{error}</span>
+            {/* Without this the error is a dead end — the only way back was a
+                page reload. Clearing the error first is what lets the skeleton
+                return while the retry is in flight. */}
+            <button
+              type="button"
+              className="shrink-0 font-semibold underline"
+              onClick={() => {
+                setError(null);
+                setRooms(null);
+                void reloadRef.current();
+              }}
+            >
+              Try again
+            </button>
           </div>
         )}
 
@@ -110,13 +149,12 @@ export default function MyRoomsPage() {
           </div>
         )}
 
-        {authLoading || rooms === null ? (
-          <div className="flex flex-col gap-2">
-            <div className="h-16 animate-pulse rounded-(--bq-radius-sm) bg-surface-2" />
-            <div className="h-16 animate-pulse rounded-(--bq-radius-sm) bg-surface-2" />
-            <span className="sr-only">Loading your rooms…</span>
-          </div>
-        ) : rooms.length === 0 ? (
+        {/* `rooms === null` means "still loading", so it has to be paired with
+            "and nothing has failed" — a failed load leaves it null forever, and
+            the skeleton would sit under the error banner indefinitely. */}
+        {authLoading || (rooms === null && error === null) ? (
+          <RoomsSkeleton />
+        ) : rooms === null ? null /* the banner above already says what went wrong */ : rooms.length === 0 ? (
           <div className="flex flex-col items-start gap-3">
             <p className="muted">You haven&rsquo;t created any rooms yet.</p>
             <Link href="/" className="btn btn-ghost btn-sm">
