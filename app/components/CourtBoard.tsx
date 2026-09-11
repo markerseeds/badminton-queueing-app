@@ -2,7 +2,50 @@
 
 import { COURT_COUNTS } from "../lib/constants";
 import type { CourtGame } from "../lib/types";
-import { Button, Card, Select } from "./ui";
+import { SkillBadge } from "./SkillBadge";
+import { Button } from "./ui";
+
+const MIN_COURTS = COURT_COUNTS[0];
+const MAX_COURTS = COURT_COUNTS[COURT_COUNTS.length - 1];
+
+// The <select> this replaced couldn't offer an out-of-range value; a stepper
+// can, so it has to clamp explicitly.
+function CourtCount({
+  courts,
+  disabled,
+  onChange,
+}: {
+  courts: number;
+  disabled: boolean;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="lbl">Courts</span>
+      <div className="stepper" role="group" aria-label="Number of courts">
+        <button
+          type="button"
+          aria-label="One fewer court"
+          disabled={disabled || courts <= MIN_COURTS}
+          onClick={() => onChange(courts - 1)}
+        >
+          −
+        </button>
+        <span className="v num grid place-items-center" aria-live="polite">
+          {courts}
+        </span>
+        <button
+          type="button"
+          aria-label="One more court"
+          disabled={disabled || courts >= MAX_COURTS}
+          onClick={() => onChange(courts + 1)}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function CourtBoard({
   games,
@@ -10,6 +53,8 @@ export function CourtBoard({
   readOnly = false,
   onChangeCourts,
   onEndGame,
+  onSendNextFour,
+  canSendNextFour,
 }: {
   games: CourtGame[];
   courts: number;
@@ -18,97 +63,87 @@ export function CourtBoard({
   readOnly?: boolean;
   onChangeCourts: (newCourts: number) => void;
   onEndGame: (courtNumber: number, courtIndex: number) => void;
+  onSendNextFour: () => void;
+  canSendNextFour: boolean;
 }) {
   return (
-    <Card className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-semibold">Courts</h1>
-        <div className="flex items-center space-x-2">
-          <label htmlFor="courts-select" className="text-sm">
-            Number of Courts:
-          </label>
-          <Select
-            id="courts-select"
-            className="w-20"
-            value={courts}
-            disabled={readOnly}
-            onChange={(e) => onChangeCourts(Number(e.target.value))}
-          >
-            {COURT_COUNTS.map((count) => (
-              <option key={count} value={count}>
-                {count}
-              </option>
-            ))}
-          </Select>
-        </div>
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="heading text-xl">Courts</h2>
+        <CourtCount
+          courts={courts}
+          disabled={readOnly}
+          onChange={onChangeCourts}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {games.map((game, index) => (
-          <Card key={game.court} className="p-4 border-2 border-gray-100">
-            <h2 className="font-bold text-center mb-3 border-b pb-2">
-              Court {game.court}
-            </h2>
+      <div className="courts-rail">
+        {games.map((game, index) => {
+          const inPlay = game.players.length > 0;
+          return (
+            <article key={game.court} className="court">
+              <div className="flex items-center justify-between gap-2">
+                <span className="court-no">Court {game.court}</span>
+                <span className={inPlay ? "pill pill-live" : "pill pill-open"}>
+                  {inPlay && <span className="dot" aria-hidden="true" />}
+                  {inPlay ? "In play" : "Open"}
+                </span>
+              </div>
 
-            {game.players.length ? (
-              <div className="space-y-4">
-                {/* TEAM 1 */}
-                <div className="bg-blue-50/50 p-2 rounded-lg border border-blue-100">
-                  <span className="text-[10px] font-bold uppercase text-blue-600 tracking-wider">
-                    Team 1
-                  </span>
-                  <ul className="text-sm mt-1">
+              {inPlay ? (
+                <>
+                  <div className="side side-1">
+                    <span className="lbl">Side 1</span>
                     {game.players.slice(0, 2).map((p) => (
-                      <li key={p.id} className="font-medium text-gray-800">
-                        {p.name}{" "}
-                        <span className="text-xs font-normal text-gray-500">
-                          ({p.skill})
-                        </span>
-                      </li>
+                      <span key={p.id} className="nm">
+                        {p.name}
+                        <SkillBadge skill={p.skill} />
+                      </span>
                     ))}
-                  </ul>
-                </div>
+                  </div>
 
-                <div
-                  aria-hidden="true"
-                  className="text-center text-xs font-bold text-gray-500 italic"
-                >
-                  VS
-                </div>
+                  <div className="vs" aria-hidden="true">
+                    vs
+                  </div>
 
-                {/* TEAM 2 */}
-                <div className="bg-red-50/50 p-2 rounded-lg border border-red-100">
-                  <span className="text-[10px] font-bold uppercase text-red-600 tracking-wider">
-                    Team 2
-                  </span>
-                  <ul className="text-sm mt-1">
+                  <div className="side side-2">
+                    <span className="lbl">Side 2</span>
                     {game.players.slice(2, 4).map((p) => (
-                      <li key={p.id} className="font-medium text-gray-800">
-                        {p.name}{" "}
-                        <span className="text-xs font-normal text-gray-500">
-                          ({p.skill})
-                        </span>
-                      </li>
+                      <span key={p.id} className="nm">
+                        {p.name}
+                        <SkillBadge skill={p.skill} />
+                      </span>
                     ))}
-                  </ul>
-                </div>
+                  </div>
 
-                <Button
-                  className="w-full bg-red-600 mt-2"
-                  disabled={readOnly}
-                  onClick={() => onEndGame(game.court, index)}
-                >
-                  End Game
-                </Button>
-              </div>
-            ) : (
-              <div className="h-32 flex items-center justify-center border-2 border-dashed border-gray-100 rounded-lg">
-                <p className="text-sm text-gray-500">Empty</p>
-              </div>
-            )}
-          </Card>
-        ))}
+                  <Button
+                    variant="danger"
+                    block
+                    className="mt-auto"
+                    disabled={readOnly}
+                    onClick={() => onEndGame(game.court, index)}
+                  >
+                    End game
+                  </Button>
+                </>
+              ) : (
+                <div className="court-empty">
+                  <p className="muted">Nobody on this court.</p>
+                  {!readOnly && (
+                    <Button
+                      size="sm"
+                      disabled={!canSendNextFour}
+                      onClick={onSendNextFour}
+                    >
+                      Send the next four
+                    </Button>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
-    </Card>
+    </section>
   );
 }

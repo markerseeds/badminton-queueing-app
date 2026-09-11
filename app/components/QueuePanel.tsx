@@ -1,11 +1,14 @@
 "use client";
 
 import type { Player } from "../lib/types";
-import { Button, Card } from "./ui";
+import { CloseIcon, ShuffleIcon } from "./icons";
+import { SkillBadge } from "./SkillBadge";
+import { Button, IconButton } from "./ui";
 
 export function QueuePanel({
   queue,
   startDisabled,
+  nextCourt,
   readOnly = false,
   onStartGame,
   onShuffleTop,
@@ -13,87 +16,123 @@ export function QueuePanel({
 }: {
   queue: Player[];
   startDisabled: boolean;
+  // The court the front four are heading to, or null when none is free.
+  nextCourt: number | null;
   // See the note in CourtBoard — set when the room is locked to a non-owner.
   readOnly?: boolean;
   onStartGame: () => void;
   onShuffleTop: () => void;
   onRemoveFromQueue: (player: Player) => void;
 }) {
+  const front = queue.slice(0, 4);
+  const rest = queue.slice(4);
+  const hasFour = front.length === 4;
+
   return (
-    <Card className="p-4">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="font-semibold">Queue</h2>
-        {queue.length >= 4 && !readOnly && (
-          <button
-            type="button"
-            onClick={onShuffleTop}
-            className="text-[10px] bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded flex items-center gap-1 transition-colors"
-          >
-            <svg
-              aria-hidden="true"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M2 6h1.4c1.3 0 2.5.6 3.3 1.7l2.2 3M22 18h-5.9c-1.3 0-2.5-.6-3.3-1.7l-2.2-3" />
-            </svg>
-            Shuffle Teams
-          </button>
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="heading text-xl">Queue</h2>
+        {hasFour && !readOnly && (
+          <Button variant="quiet" size="sm" onClick={onShuffleTop}>
+            <ShuffleIcon size={14} />
+            Shuffle sides
+          </Button>
         )}
       </div>
 
-      <Button
-        onClick={onStartGame}
-        className="mb-3 w-full"
-        disabled={startDisabled || readOnly}
-      >
-        Start Game
-      </Button>
+      {queue.length === 0 ? (
+        <p className="muted">
+          Nobody waiting. Queue a player from the list to get started.
+        </p>
+      ) : (
+        <>
+          {hasFour && (
+            <div className="upnext">
+              <div className="flex items-center justify-between gap-2">
+                <span className="lbl text-accent">
+                  {nextCourt === null
+                    ? "Up next — waiting for a court"
+                    : `Up next → Court ${nextCourt}`}
+                </span>
+                <span className="tiny num">
+                  {queue.length} waiting
+                </span>
+              </div>
 
-      <ul className="space-y-2">
-        {queue.map((p, i) => (
-          <li
-            key={p.id}
-            className={`flex justify-between items-center p-2 rounded-lg transition-colors ${
-              i < 2
-                ? "bg-blue-50 border border-blue-100" // If i < 2 (Team 1)
-                : i < 4
-                  ? "bg-red-50 border border-red-100" // Else if i < 4 (Team 2)
-                  : "bg-gray-50" // Else (Rest of Queue)
-            }`}
-          >
-            <div className="flex flex-col text-sm">
-              <span className="font-medium">
-                {i + 1}. {p.name}{" "}
-                {i < 4 && (
-                  <span
-                    className={`text-[10px] ${
-                      i < 2 ? "text-blue-600" : "text-red-600"
-                    }  font-bold ml-1`}
-                  >
-                    (T{i < 2 ? "1" : "2"})
-                  </span>
-                )}
-              </span>
-              <span className="text-xs text-gray-500">
-                {p.skill} | Games: {p.gamesPlayed}
-              </span>
+              <div className="upnext-grid">
+                <div className="side side-1">
+                  <span className="lbl">Side 1</span>
+                  {front.slice(0, 2).map((p) => (
+                    <span key={p.id} className="nm">
+                      {p.name}
+                    </span>
+                  ))}
+                </div>
+                <div className="vs" aria-hidden="true">
+                  vs
+                </div>
+                <div className="side side-2">
+                  <span className="lbl">Side 2</span>
+                  {front.slice(2, 4).map((p) => (
+                    <span key={p.id} className="nm">
+                      {p.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Duplicated by the sticky bar on a phone, where this one is
+                  usually scrolled out of reach. */}
+              <Button
+                block
+                className="hidden md:flex"
+                disabled={startDisabled || readOnly}
+                onClick={onStartGame}
+              >
+                Start game
+              </Button>
             </div>
+          )}
+
+          {/* Fewer than four waiting: no "up next" to show, but Start Game
+              still has to be reachable on a wide screen. */}
+          {!hasFour && (
             <Button
-              className="bg-gray-600 px-2 py-0.5 text-xs"
-              disabled={readOnly}
-              onClick={() => onRemoveFromQueue(p)}
+              block
+              className="hidden md:flex"
+              disabled={startDisabled || readOnly}
+              onClick={onStartGame}
             >
-              Remove
+              Start game
             </Button>
-          </li>
-        ))}
-      </ul>
-    </Card>
+          )}
+
+          <ul className="flex flex-col gap-2">
+            {(hasFour ? rest : queue).map((p, i) => (
+              <li key={p.id} className="qrow">
+                <span className="qpos num">{(hasFour ? 4 : 0) + i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="qname">
+                    {p.name}
+                    <SkillBadge skill={p.skill} />
+                  </div>
+                  <div className="tiny num">
+                    {p.gamesPlayed} {p.gamesPlayed === 1 ? "game" : "games"} so
+                    far
+                  </div>
+                </div>
+                <IconButton
+                  aria-label={`Remove ${p.name} from the queue`}
+                  disabled={readOnly}
+                  onClick={() => onRemoveFromQueue(p)}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }

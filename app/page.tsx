@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AccountBar } from "./components/AccountBar";
-import { Button, Card, Input } from "./components/ui";
+import { ShuttleIcon, WarningIcon } from "./components/icons";
+import { Button } from "./components/ui";
 import { createSession } from "./lib/sessionStore";
 
 export default function Home() {
@@ -31,60 +32,86 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-4">
+    <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-6 p-4 md:p-6">
       <AccountBar />
 
-      <Card className="p-8 w-full max-w-md space-y-6">
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold">
-            <span aria-hidden="true">🏸</span> Badminton Queue
-          </h1>
-          <p className="text-sm text-gray-500">
-            Create a room and share the link with your club.
-          </p>
-        </div>
+      <main className="hero flex-1 justify-center pb-8">
+        <span className="flex items-center gap-2 text-accent">
+          <ShuttleIcon size={20} />
+          <span className="lbl text-accent">Badminton Queue</span>
+        </span>
+
+        <h1>Nobody sits out twice in a row.</h1>
+
+        <p className="muted max-w-[46ch] text-[0.9375rem]">
+          Add your players, set your courts, and let it pick fair,
+          skill-matched fours all session. Share one link — the tablet by the
+          courts and every co-organiser stay in sync.
+        </p>
 
         <Button
-          type="button"
+          size="lg"
+          block
           onClick={handleCreate}
           disabled={creating}
-          className="w-full py-2"
         >
           {creating ? "Creating…" : "Create a room"}
         </Button>
 
-        <div
-          aria-hidden="true"
-          className="flex items-center gap-3 text-xs text-gray-500"
-        >
-          <div className="h-px bg-gray-200 flex-1" />
-          OR
-          <div className="h-px bg-gray-200 flex-1" />
+        <div aria-hidden="true" className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-line" />
+          <span className="lbl">or join one</span>
+          <span className="h-px flex-1 bg-line" />
         </div>
 
-        <form onSubmit={handleJoin} className="space-y-2">
-          <label htmlFor="join-code" className="text-sm font-medium">
-            Join with a room code
+        <form onSubmit={handleJoin} className="flex flex-col gap-2">
+          <label htmlFor="join-code" className="lbl">
+            Room code
           </label>
-          <div className="flex gap-2">
-            <Input
+          <div className="joinbox">
+            <input
               id="join-code"
+              className="field"
               placeholder="e.g. ABCD2345"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
             />
-            <Button type="submit" className="bg-gray-700 whitespace-nowrap">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="lg"
+              disabled={!joinCode.trim()}
+            >
               Join
             </Button>
           </div>
         </form>
 
+        <div className="grid grid-cols-3 gap-2.5 pt-1">
+          <div className="proof">
+            <b className="num">6</b>
+            <span className="tiny">courts at once</span>
+          </div>
+          <div className="proof">
+            <b className="num">0</b>
+            <span className="tiny">sign-ups for players</span>
+          </div>
+          <div className="proof">
+            <b className="num">Live</b>
+            <span className="tiny">on every device</span>
+          </div>
+        </div>
+
         {error && (
-          <p role="alert" className="text-red-600 text-sm">
-            <span aria-hidden="true">⚠️</span> {error}
-          </p>
+          <div role="alert" className="banner banner-danger">
+            <WarningIcon size={18} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         )}
-      </Card>
+      </main>
     </div>
   );
 }

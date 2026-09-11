@@ -341,6 +341,74 @@ error — the usual UPDATE semantics).
 
 ---
 
+### Phase 2.6 — UI redesign: design tokens, dark mode, phone-first layout `✅`  *(done 2026-09-11)*
+
+**Goal:** stop looking like a scaffold before Phase 3 starts asking people for money.
+
+**Why it jumped the queue.** Phase 3 puts a price on this app, and the UI it would have been sold
+with had a 24px touch target as its *base button size* (`px-3 py-1`, inherited by every control),
+Delete sitting a thumb-width from Queue on every player row, no dark mode at all, and a webfont that
+was downloaded on every page load and never rendered — `globals.css` hardcoded `font-family: Arial`
+on `body`, overriding the `next/font` wiring. None of that is fatal on its own; together they are
+the difference between a tool someone pays $30 for and one they assume is abandoned.
+
+**Scope**
+
+- **Design tokens** in [globals.css](app/globals.css) replacing 39 hardcoded colour utilities spread
+  across 11 files — where red meant Team 2 *and* destructive *and* error, and blue meant Team 1
+  *and* link.
+- **Dark mode**, following the OS. There was none.
+- **Phone-first layout rework**: 44px targets throughout, destructive behind an overflow menu, a
+  sticky Start-game bar in the thumb zone, courts as a swipe rail, an explicit "up next", and skill
+  as an ordinal badge instead of grey lowercase text in brackets.
+- Rewritten [ui.tsx](app/components/ui.tsx) primitives with a `variant` API, an SVG icon set
+  replacing emoji, and a radio-based skill picker replacing the native `<select>`.
+
+**Done when:** every screen uses tokens, dark mode works, no touch target is under 44px, and
+`sessionStore` / the hooks / the migrations are untouched.
+
+**✅ Done (2026-09-11):** all of the above. Direction chosen from a four-way interactive mockup kept
+at [docs/design/redesign-mockup.html](docs/design/redesign-mockup.html), which is now the spec —
+its `--mk-*` variables are a 1:1 rename of the app's `--bq-*`, so the two stay diffable.
+
+**The subtle part was which tokens can exist at all.** `@theme` exposes only `--color-*` and
+`--font-*`, because those are the two namespaces `tailwind-merge` arbitrates for names it has never
+seen. A `--radius-card` would generate a `rounded-card` that does *not* conflict with `rounded-lg`
+— both survive and stylesheet order decides, silently breaking the `cn()` override contract the
+whole component library rests on. A `--text-lbl` is worse: tailwind-merge scores an unknown
+`text-*` as a *colour*, so a later `text-ink` deletes the font size with no warning. Radius, shadow
+and sizing therefore stay raw variables consumed by component classes. Second subtlety:
+`@theme inline` is load-bearing — it compiles `bg-surface` to `var(--bq-surface)` rather than
+`var(--color-surface)`, which is the only reason re-pointing a variable under a dark selector
+reaches the utilities. Plain `@theme` would have snapshotted the light value and dark mode would
+have silently done nothing.
+
+**Two regressions caught before they shipped.** The mockup replaced the games counter with static
+text, dropping the typeable input and its `parseGamesPlayedInput` / `clampGamesPlayed` backing —
+kept the input instead. And the mockup's six-button skill grid had no slot for a band outside
+`SKILLS`; the old `<select>` needed a special case there because it silently reports its first
+option for an unknown value, and while a radio grid can't demote silently, it *can* show six
+unselected bands and tell the organizer nothing. New [skillDisplay.ts](app/lib/skillDisplay.ts)
+renders an out-of-range band as its own option, derived from the saved value rather than the current
+selection so a mis-tap is recoverable.
+
+**Also fixed:** the Geist/Arial bug — and note the trap, since deleting the Arial line alone is not
+enough. Preflight sets `font-family` on `html` while `next/font` put the variable on `<body>`, so
+the declaration was invalid at computed-value time; the variables moved to `<html>` and the
+fallbacks moved inside the `var()`.
+
+**TDD'd**: 6 `cn()` assertions written first and watched fail on the button-variant case, plus 14
+`skillDisplay` tests. 35 pure tests pass, up from 21. `tsc` / `eslint` / `next build` clean.
+
+**Deliberately not done:** TV mode (a new route and a Phase 4 *Pro* feature — building it now means
+shipping a paid feature free, then taking it away), a manual theme toggle (the `[data-theme]` hooks
+ship dormant so it's purely additive later), and the QR code / per-court timers the mockup's footer
+already marks out of scope.
+
+**Effort:** ~1 weekend.
+
+---
+
 ### Phase 3 — Free vs Paid + payments `⬜`
 
 **Goal:** actually sell the Pro unlock (C4).
@@ -440,6 +508,7 @@ Pro features are genuinely worth paying for.
 | 1 | **Migrate to Supabase + multi-tenant schema** | Multiple clubs, real DB | ~3–4 wknds | ✅ |
 | 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ✅ |
 | 2.5 | Edit player name & skill _(inserted)_ | Fix a typo without losing games played | ~0.5 wknd | ✅ |
+| 2.6 | **UI redesign** _(inserted)_ | Tokens, dark mode, 44px targets — something you can charge for | ~1 wknd | ✅ |
 | 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
@@ -527,6 +596,32 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-09-11** — **Phase 2.6 (inserted): the UI redesign.** Design tokens in `globals.css`
+  replace 39 hardcoded colour utilities across 11 files, ending the collisions where red meant Team
+  2 *and* destructive *and* error; dark mode exists for the first time, following the OS; every
+  touch target clears 44px, up from the `px-3 py-1` (~24px) base every control used to inherit;
+  Delete moves off the player row into an overflow menu, away from the Queue button it sat beside;
+  Start Game gets a sticky bar in the thumb zone; courts become a swipe rail on a phone; "up next"
+  is stated rather than inferred from row tinting; and skill becomes an ordinal badge instead of
+  grey lowercase text in brackets. Also: the Geist webfont now actually renders — it had been
+  downloaded on every page load and overridden by a hardcoded `font-family: Arial` since Phase 0.
+  **The subtle part was which tokens can exist**: `@theme` exposes only `--color-*` and `--font-*`,
+  because those are the only namespaces `tailwind-merge` arbitrates for unknown names. A
+  `--radius-card` would produce a `rounded-card` that doesn't conflict with `rounded-lg`, quietly
+  breaking the `cn()` override contract; a `--text-lbl` is worse, since tailwind-merge scores an
+  unknown `text-*` as a colour and a later `text-ink` would delete the font size. And `@theme
+  inline` is what makes dark mode possible at all — it compiles `bg-surface` to `var(--bq-surface)`
+  rather than `var(--color-surface)`, so re-pointing one variable moves every utility, with zero
+  `dark:` variants in the codebase. **Two regressions caught before shipping**: the mockup had
+  quietly dropped the typeable games counter, and its six-button skill grid had no slot for a band
+  outside `SKILLS` — new `lib/skillDisplay.ts` keeps a legacy value visible and recoverable.
+  **TDD'd**: `cn()` assertions written first and watched fail on the button-variant case, plus 14
+  `skillDisplay` tests; 35 pure tests pass, up from 21. New: `icons.tsx`, `SkillBadge.tsx`,
+  `SkillPicker.tsx`, `lib/skillDisplay.ts`, and the four-way mockup at
+  `docs/design/redesign-mockup.html` that the direction was chosen from. `sessionStore`, the hooks,
+  `logic.ts` and the migrations were not touched. **Deliberately not done:** TV mode (a new route
+  and a Phase 4 Pro feature), a manual theme toggle (hooks ship dormant), QR join codes, and
+  per-court timers (that one needs a `started_at` column).
 - **2026-08-08** — **Phase 2.5 (inserted): edit a player's name and skill.** A pencil on each Players
   row opens an **Edit Player** dialog — name field, skill dropdown, Cancel/Save — so a typo or a
   wrong skill band no longer means delete-and-re-add. That mattered because re-adding resets

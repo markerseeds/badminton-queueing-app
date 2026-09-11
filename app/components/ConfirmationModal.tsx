@@ -1,43 +1,62 @@
 "use client";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import { Button, Card } from "./ui";
+import { TrashIcon } from "./icons";
+import { Button } from "./ui";
 
 export function ConfirmationModal({
   message,
+  confirmLabel = "Yes, do it",
   onConfirm,
   onCancel,
 }: {
   message: string;
+  confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   useEscapeKey(onCancel);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <Card
+    // z-50, not z-40: a confirmation can be raised while another modal is open,
+    // so it has to stack above them.
+    <div className="modal-scrim z-50">
+      <div
+        className="modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
         aria-describedby="confirm-message"
-        className="p-6 w-full max-w-sm"
       >
-        <h3 id="confirm-title" className="font-semibold text-lg mb-4">
-          Confirm Action
-        </h3>
-        <p id="confirm-message" className="text-gray-700 mb-6">
-          {message}
-        </p>
-        <div className="flex justify-end gap-2">
-          <Button autoFocus className="bg-gray-600" onClick={onCancel}>
+        <div className="modal-grab" aria-hidden="true" />
+
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden="true"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger"
+          >
+            <TrashIcon size={19} />
+          </span>
+          <div>
+            <h3 id="confirm-title" className="heading text-base">
+              Are you sure?
+            </h3>
+            <p id="confirm-message" className="muted mt-1.5">
+              {message}
+            </p>
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          {/* Focus lands on the way out, not the way through. */}
+          <Button autoFocus variant="quiet" onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="bg-red-600" onClick={onConfirm}>
-            Confirm
+          <Button variant="dangerSolid" onClick={onConfirm}>
+            {confirmLabel}
           </Button>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

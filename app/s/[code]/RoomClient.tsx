@@ -7,12 +7,27 @@ import { BatchAddModal } from "../../components/BatchAddModal";
 import { ConfirmationModal } from "../../components/ConfirmationModal";
 import { CourtBoard } from "../../components/CourtBoard";
 import { EditPlayerModal } from "../../components/EditPlayerModal";
+import {
+  CheckIcon,
+  CloseIcon,
+  CopyIcon,
+  LockIcon,
+  UnlockIcon,
+  WarningIcon,
+} from "../../components/icons";
 import { PlayerList } from "../../components/PlayerList";
 import { QueuePanel } from "../../components/QueuePanel";
+import { Button, IconButton } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
 import { useSession } from "../../hooks/useSession";
 import { getAvailablePlayers } from "../../lib/logic";
 import type { Player } from "../../lib/types";
+
+type PendingConfirm = {
+  message: string;
+  confirmLabel: string;
+  action: () => void;
+};
 
 export function RoomClient({ code }: { code: string }) {
   const { state, status, error, dismissError, actions } = useSession(code);
@@ -20,25 +35,31 @@ export function RoomClient({ code }: { code: string }) {
 
   const [showModal, setShowModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmMessage, setConfirmMessage] = useState("");
-  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(
+    null,
+  );
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (status === "loading") {
-    return <div className="p-6">Loading session…</div>;
+    return (
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
+        <div className="h-20 animate-pulse rounded-(--bq-radius) bg-surface-2" />
+        <div className="h-52 animate-pulse rounded-(--bq-radius) bg-surface-2" />
+        <span className="sr-only">Loading room…</span>
+      </div>
+    );
   }
 
   if (status === "not_found") {
     return (
-      <div className="p-6 space-y-3">
-        <h1 className="text-xl font-semibold">Room not found</h1>
-        <p className="text-gray-600">
-          No room exists for code{" "}
-          <span className="font-mono">{code}</span>.
+      <div className="mx-auto flex max-w-md flex-col items-start gap-3 p-6">
+        <h1 className="heading text-xl">Room not found</h1>
+        <p className="muted">
+          No room exists for code <span className="font-mono">{code}</span>.
+          Double-check it with whoever shared it.
         </p>
-        <Link href="/" className="text-blue-600 underline">
+        <Link href="/" className="text-sm font-medium text-accent underline">
           Back to start
         </Link>
       </div>
@@ -47,48 +68,42 @@ export function RoomClient({ code }: { code: string }) {
 
   if (!state) {
     return (
-      <div className="p-6 space-y-3">
-        <p className="text-red-600">{error ?? "Could not load this room."}</p>
-        <Link href="/" className="text-blue-600 underline">
+      <div className="mx-auto flex max-w-md flex-col items-start gap-3 p-6">
+        <div role="alert" className="banner banner-danger">
+          <WarningIcon size={18} className="mt-0.5 shrink-0" />
+          <span>{error ?? "Could not load this room."}</span>
+        </div>
+        <Link href="/" className="text-sm font-medium text-accent underline">
           Back to start
         </Link>
       </div>
     );
   }
 
-  const requestConfirm = (message: string, action: () => void) => {
-    setConfirmMessage(message);
-    setConfirmAction(() => action);
-    setShowConfirmModal(true);
-  };
-
   const confirmDeletePlayer = (player: Player) =>
-    requestConfirm(
-      `Are you sure you want to delete player: ${player.name}? This cannot be undone.`,
-      () => actions.deletePlayer(player),
-    );
+    setPendingConfirm({
+      message: `${player.name} and their games-played count will be removed from this room. You can't undo this.`,
+      confirmLabel: `Remove ${player.name}`,
+      action: () => actions.deletePlayer(player),
+    });
 
   const confirmEndGame = (courtNumber: number) =>
-    requestConfirm(
-      `Are you sure you want to end the game on Court ${courtNumber}? The players will return to the available list.`,
-      () => actions.endGame(courtNumber),
-    );
+    setPendingConfirm({
+      message: `The four players on Court ${courtNumber} go back to the players list and their games count goes up by one.`,
+      confirmLabel: `End Court ${courtNumber}`,
+      action: () => actions.endGame(courtNumber),
+    });
 
   const confirmDeleteAll = () =>
-    requestConfirm(
-      "DANGER: Are you sure you want to delete ALL players and clear all courts? This action cannot be undone.",
-      () => actions.deleteAll(),
-    );
+    setPendingConfirm({
+      message: `All ${state.players.length} players, every game in progress and the whole queue will be removed, along with their games-played counts. You can't undo this.`,
+      confirmLabel: `Remove all ${state.players.length}`,
+      action: () => actions.deleteAll(),
+    });
 
   const handleConfirm = () => {
-    confirmAction?.();
-    setShowConfirmModal(false);
-    setConfirmAction(null);
-  };
-
-  const handleCancel = () => {
-    setShowConfirmModal(false);
-    setConfirmAction(null);
+    pendingConfirm?.action();
+    setPendingConfirm(null);
   };
 
   const copyLink = async () => {
@@ -102,8 +117,8 @@ export function RoomClient({ code }: { code: string }) {
   };
 
   const availablePlayers = getAvailablePlayers(state);
-  const startDisabled =
-    state.queue.length < 4 || state.games.every((g) => g.players.length > 0);
+  const firstFreeCourt = state.games.find((g) => g.players.length === 0);
+  const startDisabled = state.queue.length < 4 || firstFreeCourt === undefined;
 
   // Mirrors the server-side predicate in `session_is_editable()`. The
   // `ownerId !== null` arm matters: an ownerless room (created before accounts,
@@ -112,61 +127,53 @@ export function RoomClient({ code }: { code: string }) {
   const isOwner = state.ownerId !== null && state.ownerId === user?.id;
   const readOnly = state.locked && state.ownerId !== null && !isOwner;
 
+  const nextFour = state.queue.slice(0, 4);
+
   return (
-    <div className="p-6 space-y-6">
-      {/* ROOM HEADER */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-gray-600">
-          Room code:{" "}
-          <span className="font-mono font-semibold text-gray-900">
-            {state.shareCode}
-          </span>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 md:p-6">
+      {/* SHARE HEADER — the room code is how anyone else gets in. */}
+      <header className="share">
+        <div className="min-w-0 flex-1">
+          <div className="lbl">Room code</div>
+          <div className="code num">{state.shareCode}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" size="sm" onClick={copyLink}>
+            {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+            {copied ? "Link copied" : "Copy link"}
+          </Button>
           {isOwner && (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
+              size="sm"
               aria-pressed={state.locked}
               onClick={() => actions.setLocked(!state.locked)}
-              className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
             >
-              <span aria-hidden="true">{state.locked ? "🔒" : "🔓"}</span>{" "}
-              {state.locked ? "Locked — only you can edit" : "Lock to just me"}
-            </button>
+              {state.locked ? <LockIcon size={15} /> : <UnlockIcon size={15} />}
+              {state.locked ? "Locked to you" : "Lock to just me"}
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={copyLink}
-            className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg transition-colors"
-          >
-            {copied ? "Link copied!" : "Copy invite link"}
-          </button>
         </div>
-      </div>
+      </header>
 
       {readOnly && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2 rounded-lg">
-          <span aria-hidden="true">🔒</span> View only — the organizer has locked
-          this room.
+        <div className="banner banner-warn">
+          <LockIcon size={18} className="mt-0.5 shrink-0" />
+          <span>View only — the organizer has locked this room.</span>
         </div>
       )}
 
       {error && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg"
-        >
-          <span>
-            <span aria-hidden="true">⚠️</span> {error}
-          </span>
-          <button
-            type="button"
+        <div role="alert" className="banner banner-danger">
+          <WarningIcon size={18} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <IconButton
             aria-label="Dismiss error"
+            className="-my-1 size-8 border-0 bg-transparent"
             onClick={dismissError}
-            className="font-bold px-2"
           >
-            ×
-          </button>
+            <CloseIcon size={16} />
+          </IconButton>
         </div>
       )}
 
@@ -176,12 +183,15 @@ export function RoomClient({ code }: { code: string }) {
         readOnly={readOnly}
         onChangeCourts={actions.changeCourts}
         onEndGame={(courtNumber) => confirmEndGame(courtNumber)}
+        onSendNextFour={actions.startGame}
+        canSendNextFour={!startDisabled}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="room-body">
         <QueuePanel
           queue={state.queue}
           startDisabled={startDisabled}
+          nextCourt={firstFreeCourt?.court ?? null}
           readOnly={readOnly}
           onStartGame={actions.startGame}
           onShuffleTop={actions.shuffleTop}
@@ -200,6 +210,22 @@ export function RoomClient({ code }: { code: string }) {
           onUpdateGamesPlayed={actions.setGamesPlayed}
         />
       </div>
+
+      {/* The most-tapped control of the night, in the thumb zone. Phone only —
+          QueuePanel carries its own Start Game from tablet up. */}
+      {!readOnly && !startDisabled && (
+        <div className="actionbar">
+          <div className="min-w-0 flex-1">
+            <div className="lbl">Court {firstFreeCourt?.court} is free</div>
+            <div className="truncate text-sm font-semibold">
+              {nextFour.map((p) => p.name).join(", ")}
+            </div>
+          </div>
+          <Button size="lg" onClick={actions.startGame}>
+            Start game
+          </Button>
+        </div>
+      )}
 
       {showModal && (
         <AddPlayerModal
@@ -222,11 +248,12 @@ export function RoomClient({ code }: { code: string }) {
         />
       )}
 
-      {showConfirmModal && (
+      {pendingConfirm && (
         <ConfirmationModal
-          message={confirmMessage}
+          message={pendingConfirm.message}
+          confirmLabel={pendingConfirm.confirmLabel}
           onConfirm={handleConfirm}
-          onCancel={handleCancel}
+          onCancel={() => setPendingConfirm(null)}
         />
       )}
 

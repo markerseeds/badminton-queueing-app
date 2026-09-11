@@ -1,0 +1,1366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Badminton Queue Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Standalone wrapper. The published Artifact supplies this head for free;
+     it is reproduced here so the file opens correctly straight from disk.
+     The [hidden] rule is load-bearing: the screen switcher toggles .hidden on
+     elements whose class sets display:flex, which would otherwise win. -->
+<style>
+  :root{color-scheme:light dark}
+  body{margin:0; font:14px ui-sans-serif, system-ui, sans-serif}
+  img{max-width:100%}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+
+<style>
+/* ============================================================
+   SHELL — the pitch page itself.
+   Deliberately quiet and cool-neutral so the four mockup
+   palettes below are the only colour competing for attention.
+   ============================================================ */
+:root{
+  --bg:#EEF0F4; --panel:#FFFFFF; --panel-2:#F6F7FA; --panel-3:#E7EAF1;
+  --fg:#151A21; --fg-2:#5B6474; --fg-3:#858E9E;
+  --line:#D6DAE3; --line-2:#C2C8D4;
+  --brand:#2F3E5C; --brand-ink:#FFFFFF;
+  --focus:#2B6CB0;
+  --sh:0 1px 2px rgba(16,22,34,.06), 0 8px 24px -12px rgba(16,22,34,.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1014; --panel:#151A21; --panel-2:#1B212A; --panel-3:#232B36;
+    --fg:#E7EAF0; --fg-2:#98A1B2; --fg-3:#6F7889;
+    --line:#2A323E; --line-2:#39424F;
+    --brand:#C3CEE6; --brand-ink:#10141A;
+    --focus:#7FB3E8;
+    --sh:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1014; --panel:#151A21; --panel-2:#1B212A; --panel-3:#232B36;
+  --fg:#E7EAF0; --fg-2:#98A1B2; --fg-3:#6F7889;
+  --line:#2A323E; --line-2:#39424F;
+  --brand:#C3CEE6; --brand-ink:#10141A;
+  --focus:#7FB3E8;
+  --sh:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:4px}
+h1,h2,h3,h4{margin:0; text-wrap:balance; font-weight:600}
+p{margin:0}
+ul,ol{margin:0; padding:0; list-style:none}
+button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
+input,select,textarea{font:inherit; color:inherit}
+
+.wrap{max-width:1180px; margin:0 auto; padding-inline:16px}
+
+/* ---------- masthead ---------- */
+.mast{padding-block:26px 18px; display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; justify-content:space-between}
+.mast h1{
+  font-family:"Archivo",ui-sans-serif,system-ui,sans-serif;
+  font-size:clamp(22px,3.4vw,30px); font-weight:700; letter-spacing:-.02em;
+}
+.mast .sub{color:var(--fg-2); font-size:14px; max-width:60ch; margin-top:5px}
+.mast .meta{font-size:12px; color:var(--fg-3); display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.chip-scope{
+  border:1px solid var(--line); border-radius:999px; padding:3px 10px;
+  background:var(--panel); color:var(--fg-2); white-space:nowrap;
+}
+
+/* ---------- control bar ---------- */
+.controls{
+  position:sticky; top:0; z-index:30;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px);
+  border-block:1px solid var(--line);
+  padding-block:10px;
+}
+.ctl-rows{display:flex; flex-direction:column; gap:9px}
+.ctl-row{display:flex; flex-wrap:wrap; gap:9px; align-items:center}
+.ctl-label{
+  font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--fg-3); font-weight:600; min-width:66px;
+}
+.seg{display:flex; flex-wrap:wrap; gap:3px; background:var(--panel-3); border-radius:9px; padding:3px}
+.seg button{
+  padding:6px 11px; border-radius:6px; font-size:13px; font-weight:500;
+  color:var(--fg-2); white-space:nowrap; transition:background .15s, color .15s;
+  min-height:32px;
+}
+.seg button:hover{color:var(--fg)}
+.seg button[aria-pressed="true"]{background:var(--panel); color:var(--fg); box-shadow:0 1px 2px rgba(16,22,34,.14); font-weight:600}
+.seg button .k{
+  font-family:"Geist Mono",ui-monospace,monospace; font-size:11px;
+  color:var(--fg-3); margin-right:5px;
+}
+.seg button[aria-pressed="true"] .k{color:var(--fg-2)}
+.tog{
+  display:inline-flex; align-items:center; gap:7px; padding:6px 11px; min-height:32px;
+  border:1px solid var(--line); border-radius:9px; background:var(--panel);
+  font-size:13px; color:var(--fg-2); font-weight:500;
+}
+.tog[aria-pressed="true"]{border-color:var(--brand); color:var(--fg); background:var(--panel-2)}
+.tog .dot{width:8px; height:8px; border-radius:50%; background:var(--line-2)}
+.tog[aria-pressed="true"] .dot{background:var(--brand)}
+
+/* ---------- stage ---------- */
+.stage-head{
+  display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; justify-content:space-between;
+  padding-block:20px 12px;
+}
+.stage-head h2{font-family:"Archivo",sans-serif; font-size:19px; letter-spacing:-.01em}
+.stage-head .note{font-size:13px; color:var(--fg-2); max-width:62ch}
+.stage{
+  overflow-x:auto; padding-block:4px 30px;
+  display:flex; justify-content:center;
+}
+.frame{
+  flex:0 0 auto; position:relative;
+  background:var(--panel); border-radius:20px;
+  border:1px solid var(--line-2); box-shadow:var(--sh);
+  overflow:hidden;
+}
+.frame[data-w="phone"]{width:390px}
+.frame[data-w="tablet"]{width:760px}
+.frame[data-w="desk"]{width:1100px}
+.frame-bar{
+  height:30px; display:flex; align-items:center; gap:6px; padding-inline:12px;
+  border-bottom:1px solid var(--line); background:var(--panel-2);
+}
+.frame-bar i{width:8px; height:8px; border-radius:50%; background:var(--line-2)}
+.frame-bar .url{
+  margin-left:8px; font-family:"Geist Mono",monospace; font-size:10px;
+  color:var(--fg-3); letter-spacing:.01em;
+}
+
+/* ============================================================
+   MOCK TOKENS — four directions x two modes.
+   Every token is declared for every combination, never behind a
+   media query, so the preview never half-resolves.
+   ============================================================ */
+.mock{
+  font-family:var(--mk-body); color:var(--mk-ink); background:var(--mk-ground);
+  position:relative; isolation:isolate;
+}
+
+/* --- SIDELINE — the palette, in full --- */
+.mock{
+  --mk-ground:#F7F8FA; --mk-surface:#FFFFFF; --mk-surface-2:#F0F3F6; --mk-sunken:#EAEEF2;
+  --mk-ink:#14181F; --mk-ink-2:#5A6472; --mk-ink-3:#8A94A3;
+  --mk-line:#DFE4EA; --mk-line-2:#C8D0D9;
+  --mk-accent:#14607A; --mk-on-accent:#FFFFFF; --mk-accent-soft:#E4EFF3;
+  --mk-t1:#1E5F8C; --mk-t1-soft:#E8F1F8; --mk-t2:#9A4A18; --mk-t2-soft:#FBEFE6;
+  --mk-ok:#1E7A4F; --mk-warn:#8A5A00; --mk-warn-soft:#FBF2DF; --mk-danger:#B3261E; --mk-danger-soft:#FBEAE8;
+  --mk-radius:10px; --mk-radius-sm:7px; --mk-radius-lg:14px;
+  --mk-shadow:0 1px 2px rgba(20,24,31,.05), 0 6px 18px -10px rgba(20,24,31,.22);
+  --mk-display:"Archivo",ui-sans-serif,system-ui,sans-serif;
+  --mk-body:"Geist",ui-sans-serif,system-ui,sans-serif;
+  --mk-mono:"Geist Mono",ui-monospace,monospace;
+  --mk-lbl-sp:.06em; --mk-lbl-weight:600; --mk-head-sp:-.015em; --mk-head-tr:none;
+}
+.mock[data-mode="dark"]{
+  --mk-ground:#0F1418; --mk-surface:#171E24; --mk-surface-2:#1E262E; --mk-sunken:#131A20;
+  --mk-ink:#E8EDF2; --mk-ink-2:#9AA6B2; --mk-ink-3:#6E7A87;
+  --mk-line:#28323A; --mk-line-2:#37434D;
+  --mk-accent:#4FBFD9; --mk-on-accent:#08171C; --mk-accent-soft:#12333D;
+  --mk-t1:#68B3E8; --mk-t1-soft:#132836; --mk-t2:#E29A67; --mk-t2-soft:#33241A;
+  --mk-ok:#54C89A; --mk-warn:#E0B15C; --mk-warn-soft:#33290F; --mk-danger:#F08B84; --mk-danger-soft:#3A1D1A;
+  --mk-shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px -10px rgba(0,0,0,.8);
+}
+
+
+
+
+/* ============================================================
+   MOCK COMPONENTS — one markup set, driven entirely by tokens.
+   This is the thesis: the app should look like this too.
+   ============================================================ */
+.screen{padding:16px; display:flex; flex-direction:column; gap:14px}
+.frame[data-w="desk"] .screen,
+.frame[data-w="tablet"] .screen{padding:22px; gap:18px}
+
+.mk-card{
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius); box-shadow:var(--mk-shadow);
+}
+.mk-h{
+  font-family:var(--mk-display); font-weight:700;
+  letter-spacing:var(--mk-head-sp); text-transform:var(--mk-head-tr);
+  line-height:1.12; margin:0;
+}
+.mk-h.xl{font-size:30px}
+.mk-h.lg{font-size:21px}
+.mk-h.md{font-size:16px}
+
+.lbl{
+  font-size:10px; text-transform:uppercase; letter-spacing:var(--mk-lbl-sp);
+  font-weight:var(--mk-lbl-weight); color:var(--mk-ink-3);
+}
+.muted{color:var(--mk-ink-2); font-size:13px}
+.tiny{font-size:11px; color:var(--mk-ink-3)}
+.num{font-variant-numeric:tabular-nums}
+
+/* --- buttons: every interactive target clears 44px --- */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  min-height:44px; padding:0 16px; border-radius:var(--mk-radius-sm);
+  font-weight:600; font-size:14px; border:1px solid transparent;
+  transition:filter .15s, background .15s; white-space:nowrap;
+}
+.btn:hover{filter:brightness(.94)}
+.btn-primary{background:var(--mk-accent); color:var(--mk-on-accent)}
+.btn-ghost{background:var(--mk-surface-2); color:var(--mk-ink); border-color:var(--mk-line)}
+.btn-quiet{background:transparent; color:var(--mk-ink-2); border-color:var(--mk-line)}
+.btn-danger{background:var(--mk-danger-soft); color:var(--mk-danger); border-color:transparent}
+.btn-sm{min-height:44px; padding:0 12px; font-size:13px}
+.btn-lg{min-height:52px; font-size:16px; padding:0 22px}
+.btn-block{width:100%}
+.btn[disabled]{opacity:.4}
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:44px; height:44px; border-radius:var(--mk-radius-sm);
+  color:var(--mk-ink-2); border:1px solid var(--mk-line); background:var(--mk-surface);
+}
+.icon-btn:hover{color:var(--mk-ink); background:var(--mk-surface-2)}
+.icon-btn svg{width:18px; height:18px}
+
+/* --- share header: the room code is the product's viral loop --- */
+.share{
+  display:flex; flex-wrap:wrap; align-items:center; gap:12px;
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius); padding:12px 14px; box-shadow:var(--mk-shadow);
+}
+.share .code{
+  font-family:var(--mk-mono); font-size:24px; font-weight:500;
+  letter-spacing:.1em; color:var(--mk-ink); line-height:1;
+}
+.share .grow{flex:1 1 auto; min-width:0}
+.share .acts{display:flex; gap:8px; flex-wrap:wrap}
+
+/* --- status pills --- */
+.pill{
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 9px; border-radius:999px; font-size:11px; font-weight:600;
+  letter-spacing:.02em;
+}
+.pill-live{background:var(--mk-accent-soft); color:var(--mk-accent)}
+.pill-open{background:var(--mk-surface-2); color:var(--mk-ink-3)}
+.pill-warn{background:var(--mk-warn-soft); color:var(--mk-warn)}
+.pill i{width:6px; height:6px; border-radius:50%; background:currentColor}
+
+/* --- skill badge: ordinal ramp as a dot, text always on ink.
+       Six bands drive who plays whom, so they must be scannable. --- */
+.skill{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--mk-ink-2); border:1px solid var(--mk-line);
+  border-radius:999px; padding:2px 8px 2px 6px; white-space:nowrap;
+}
+.skill .rk{width:7px; height:7px; border-radius:50%; background:color-mix(in oklab, var(--mk-accent) var(--mix,50%), var(--mk-line-2))}
+[data-skill="1"] .rk{--mix:10%}
+[data-skill="2"] .rk{--mix:28%}
+[data-skill="3"] .rk{--mix:46%}
+[data-skill="4"] .rk{--mix:64%}
+[data-skill="5"] .rk{--mix:82%}
+[data-skill="6"] .rk{--mix:100%}
+
+/* --- courts --- */
+.courts-head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap}
+.courts-rail{
+  display:grid; grid-auto-flow:column; grid-auto-columns:78%;
+  gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
+  padding-bottom:6px; margin-inline:-16px; padding-inline:16px;
+}
+.courts-rail>*{scroll-snap-align:start}
+.frame[data-w="tablet"] .courts-rail{grid-auto-columns:unset; grid-auto-flow:row; grid-template-columns:repeat(2,1fr); overflow:visible; margin-inline:0; padding-inline:0}
+.frame[data-w="desk"] .courts-rail{grid-auto-columns:unset; grid-auto-flow:row; grid-template-columns:repeat(3,1fr); overflow:visible; margin-inline:0; padding-inline:0}
+
+.court{
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius); padding:13px; box-shadow:var(--mk-shadow);
+  display:flex; flex-direction:column; gap:11px; min-height:200px;
+}
+.court-top{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.court-no{font-family:var(--mk-display); font-size:15px; font-weight:700; letter-spacing:var(--mk-head-sp); text-transform:var(--mk-head-tr)}
+.side{padding:9px 10px; border-radius:var(--mk-radius-sm); display:flex; flex-direction:column; gap:3px}
+.side-1{background:var(--mk-t1-soft)}
+.side-2{background:var(--mk-t2-soft)}
+.side .lbl{color:inherit; opacity:.85}
+.side-1 .lbl{color:var(--mk-t1)}
+.side-2 .lbl{color:var(--mk-t2)}
+.side .nm{font-size:14px; font-weight:600; color:var(--mk-ink); display:flex; justify-content:space-between; gap:8px; align-items:center}
+.vs{
+  text-align:center; font-family:var(--mk-display); font-size:11px; font-weight:700;
+  letter-spacing:.2em; color:var(--mk-ink-3); text-transform:uppercase;
+}
+.court-empty{
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:8px; border:1px dashed var(--mk-line-2); border-radius:var(--mk-radius-sm);
+  padding:16px; text-align:center; background:var(--mk-sunken);
+}
+
+
+
+
+/* --- up-next / queue --- */
+.panel{display:flex; flex-direction:column; gap:11px}
+.panel-head{display:flex; align-items:center; justify-content:space-between; gap:10px}
+.upnext{
+  background:var(--mk-accent-soft); border:1px solid color-mix(in srgb, var(--mk-accent) 25%, transparent);
+  border-radius:var(--mk-radius); padding:13px; display:flex; flex-direction:column; gap:11px;
+}
+.upnext-grid{display:grid; grid-template-columns:1fr auto 1fr; gap:9px; align-items:center}
+.qrow{
+  display:flex; align-items:center; gap:11px; padding:9px 11px;
+  border-radius:var(--mk-radius-sm); background:var(--mk-surface);
+  border:1px solid var(--mk-line); min-height:56px;
+}
+.qpos{
+  font-family:var(--mk-mono); font-size:12px; color:var(--mk-ink-3);
+  width:20px; text-align:right; flex:0 0 auto;
+}
+.qbody{flex:1; min-width:0}
+.qname{font-size:14px; font-weight:600; display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+
+/* --- players --- */
+.plist{display:grid; grid-template-columns:1fr; gap:9px}
+.frame[data-w="tablet"] .plist,.frame[data-w="desk"] .plist{grid-template-columns:repeat(2,1fr)}
+.prow{
+  display:flex; align-items:center; gap:11px; padding:10px 11px;
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius-sm); min-height:64px;
+}
+.pmain{flex:1; min-width:0; display:flex; flex-direction:column; gap:5px}
+.pname{font-size:15px; font-weight:600; display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+.stepper{
+  display:inline-flex; align-items:center; height:34px;
+  border:1px solid var(--mk-line); border-radius:var(--mk-radius-sm);
+  background:var(--mk-sunken); overflow:hidden; width:max-content;
+}
+/* In the player row the stepper is a child of a column flex container, so
+   without this it stretches the full width and the + drifts off on its own. */
+.pmain .stepper{align-self:flex-start}
+.stepper button{flex:0 0 auto; width:32px; height:34px; color:var(--mk-ink-2); font-size:15px; font-weight:600}
+.stepper button:hover{background:var(--mk-surface-2); color:var(--mk-ink)}
+.stepper .v{
+  flex:0 0 auto; width:30px; text-align:center; font-size:13px; font-weight:700;
+  font-variant-numeric:tabular-nums; border-inline:1px solid var(--mk-line);
+  line-height:34px;
+}
+/* 44px is a thumb requirement, not a mouse one — spend the size only on phone. */
+.frame[data-w="phone"] .stepper{height:44px}
+.frame[data-w="phone"] .stepper button{width:42px; height:44px; font-size:17px}
+.frame[data-w="phone"] .stepper .v{width:34px; line-height:44px; font-size:14px}
+
+/* --- sticky action bar (phone only) --- */
+.actionbar{
+  position:sticky; bottom:0; margin:2px -16px -16px; padding:11px 16px 14px;
+  background:color-mix(in srgb, var(--mk-ground) 92%, transparent);
+  backdrop-filter:blur(8px);
+  border-top:1px solid var(--mk-line);
+  display:flex; align-items:center; gap:11px;
+}
+.frame[data-w="tablet"] .actionbar,.frame[data-w="desk"] .actionbar{display:none}
+
+/* --- two-column body on wide frames --- */
+.room-body{display:grid; grid-template-columns:1fr; gap:14px}
+.frame[data-w="desk"] .room-body{grid-template-columns:minmax(0,340px) minmax(0,1fr); gap:20px; align-items:start}
+.frame[data-w="tablet"] .room-body{grid-template-columns:minmax(0,300px) minmax(0,1fr); gap:18px; align-items:start}
+
+/* --- landing --- */
+.hero{display:flex; flex-direction:column; gap:16px; padding-block:12px}
+.hero .eyebrow{display:flex; align-items:center; gap:8px}
+.hero h1{font-family:var(--mk-display); font-size:clamp(28px,6vw,44px); line-height:1.04; letter-spacing:var(--mk-head-sp); text-transform:var(--mk-head-tr); font-weight:700}
+.hero p.lede{font-size:15px; color:var(--mk-ink-2); max-width:46ch}
+.frame[data-w="desk"] .hero h1{font-size:52px}
+.hero-actions{display:flex; flex-direction:column; gap:10px}
+.frame[data-w="desk"] .hero-actions{flex-direction:row; align-items:center}
+.joinbox{display:flex; gap:8px; align-items:stretch}
+.field{
+  flex:1; min-width:0; height:52px; padding:0 14px;
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius-sm); color:var(--mk-ink);
+  font-family:var(--mk-mono); font-size:15px; letter-spacing:.14em; text-transform:uppercase;
+}
+.field::placeholder{color:var(--mk-ink-3); letter-spacing:.14em}
+.hero-proof{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding-top:6px}
+.proof{display:flex; flex-direction:column; gap:3px; padding:11px; background:var(--mk-surface-2); border-radius:var(--mk-radius-sm)}
+.proof b{font-family:var(--mk-display); font-size:17px; font-weight:700; letter-spacing:var(--mk-head-sp)}
+.hero-art{
+  border:1px solid var(--mk-line); border-radius:var(--mk-radius);
+  background:var(--mk-surface); padding:13px; display:flex; flex-direction:column; gap:9px;
+  box-shadow:var(--mk-shadow);
+}
+.frame[data-w="desk"] .landing-split{display:grid; grid-template-columns:1.05fr .95fr; gap:34px; align-items:center}
+
+/* --- my rooms --- */
+.roomrow{
+  display:flex; align-items:center; gap:12px; padding:12px;
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius-sm); min-height:64px;
+}
+.roomrow .rc{font-family:var(--mk-mono); font-size:16px; font-weight:500; letter-spacing:.08em; color:var(--mk-accent)}
+
+/* --- modals --- */
+.modal-scrim{
+  position:absolute; inset:0; z-index:5;
+  background:color-mix(in srgb, var(--mk-ink) 52%, transparent);
+  display:flex; align-items:flex-end; justify-content:center; padding:16px;
+}
+.frame[data-w="desk"] .modal-scrim,.frame[data-w="tablet"] .modal-scrim{align-items:center}
+.modal{
+  width:100%; max-width:420px; background:var(--mk-surface);
+  border:1px solid var(--mk-line); border-radius:var(--mk-radius-lg);
+  padding:18px; display:flex; flex-direction:column; gap:14px;
+  box-shadow:0 20px 50px -20px rgba(0,0,0,.5);
+}
+.modal-grab{width:34px; height:4px; border-radius:99px; background:var(--mk-line-2); margin:-4px auto 2px}
+.frame[data-w="desk"] .modal-grab,.frame[data-w="tablet"] .modal-grab{display:none}
+.modal-field{display:flex; flex-direction:column; gap:6px}
+.modal-input{
+  height:48px; padding:0 13px; background:var(--mk-ground);
+  border:1px solid var(--mk-line); border-radius:var(--mk-radius-sm); color:var(--mk-ink); font-size:15px;
+}
+.modal-ta{
+  min-height:132px; padding:11px 13px; background:var(--mk-ground);
+  border:1px solid var(--mk-line); border-radius:var(--mk-radius-sm);
+  color:var(--mk-ink); font-family:var(--mk-mono); font-size:13px; line-height:1.7; resize:none;
+}
+.skillpick{display:grid; grid-template-columns:repeat(3,1fr); gap:7px}
+.skillopt{
+  display:flex; flex-direction:column; align-items:flex-start; gap:5px;
+  min-height:56px; padding:8px 9px; border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius-sm); background:var(--mk-ground); text-align:left;
+}
+.skillopt[aria-pressed="true"]{border-color:var(--mk-accent); background:var(--mk-accent-soft)}
+.skillopt .nmm{font-size:11px; font-weight:600; color:var(--mk-ink); line-height:1.25}
+.modal-actions{display:flex; gap:9px}
+.modal-actions .btn{flex:1}
+
+/* --- TV mode --- */
+.tv{background:var(--mk-ground); padding:20px; display:flex; flex-direction:column; gap:16px; min-height:420px}
+.tv-head{display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap}
+.tv-title{font-family:var(--mk-display); font-size:26px; font-weight:700; letter-spacing:var(--mk-head-sp); text-transform:var(--mk-head-tr)}
+.tv-courts{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
+.frame[data-w="desk"] .tv-courts{grid-template-columns:repeat(3,1fr)}
+.tv-court{
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:var(--mk-radius); padding:14px; display:flex; flex-direction:column; gap:9px;
+}
+.tv-court .cn{font-family:var(--mk-display); font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--mk-ink-3); font-weight:700}
+.tv-name{font-size:17px; font-weight:600; line-height:1.3}
+.frame[data-w="desk"] .tv-name{font-size:20px}
+.tv-vs{height:1px; background:var(--mk-line); margin-block:2px}
+.tv-next{background:var(--mk-surface-2); border-radius:var(--mk-radius); padding:14px; display:flex; flex-direction:column; gap:9px}
+.tv-queue{display:flex; gap:8px; flex-wrap:wrap}
+.tv-chip{
+  display:inline-flex; align-items:center; gap:7px; padding:7px 13px;
+  background:var(--mk-surface); border:1px solid var(--mk-line);
+  border-radius:999px; font-size:14px; font-weight:600;
+}
+.tv-chip .n{font-family:var(--mk-mono); font-size:11px; color:var(--mk-ink-3)}
+
+/* ============================================================
+   BEFORE — an honest reproduction of today's UI.
+   Hard-coded Tailwind values, Arial, py-1 buttons, emoji icons.
+   ============================================================ */
+.before{background:#fff; color:#171717; font-family:Arial,Helvetica,sans-serif; padding:24px; display:flex; flex-direction:column; gap:24px; font-size:15px}
+.before .b-card{background:#fff; border:1px solid #e5e7eb; border-radius:12px}
+.before .b-btn{
+  display:inline-block; padding:4px 12px; border-radius:8px;
+  background:#000; color:#fff; font-size:15px; line-height:1.5;
+}
+.before .b-btn.g{background:#16a34a}
+.before .b-btn.r{background:#dc2626}
+.before .b-btn.gy{background:#4b5563}
+.before .b-muted{color:#6b7280; font-size:13px}
+.before h1{font-size:20px; font-weight:600}
+.before h2{font-size:15px; font-weight:600}
+
+/* ============================================================
+   44px TOUCH-TARGET OVERLAY
+   Green in the redesign (every target clears 44px); red in the
+   reproduction of today's UI (py-1 buttons land around 24px).
+   ============================================================ */
+[data-tap="on"] .mock .btn,
+[data-tap="on"] .mock .icon-btn,
+[data-tap="on"] .frame[data-w="phone"] .stepper,
+[data-tap="on"] .mock .skillopt,
+[data-tap="on"] .mock .field,
+[data-tap="on"] .mock .modal-input{
+  outline:2px dashed #16a34a; outline-offset:-1px;
+}
+[data-tap="on"] .before .b-btn,
+[data-tap="on"] .before .b-tap{
+  outline:2px dashed #dc2626; outline-offset:-1px;
+}
+.tap-key{
+  display:none; gap:14px; align-items:center; flex-wrap:wrap;
+  font-size:12px; color:var(--fg-2); padding-bottom:10px;
+}
+[data-tap="on"] .tap-key{display:flex}
+.tap-key span{display:inline-flex; align-items:center; gap:6px}
+.tap-key i{width:16px; height:10px; border:2px dashed currentColor; border-radius:2px}
+.tap-key .pass{color:#16a34a}
+.tap-key .fail{color:#dc2626}
+
+/* ============================================================
+   SPEC PANEL
+   ============================================================ */
+.spec{padding-block:8px 40px; display:grid; grid-template-columns:1fr; gap:18px}
+@media (min-width:880px){.spec{grid-template-columns:1.35fr 1fr}}
+.spec-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:var(--sh)}
+.spec-card h3{font-family:"Archivo",sans-serif; font-size:16px; letter-spacing:-.01em; margin-bottom:4px}
+.spec-card .kicker{font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-3); font-weight:600; margin-bottom:9px}
+.spec-card p{font-size:14px; color:var(--fg-2); line-height:1.6}
+.swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:9px; margin-block:14px 4px}
+.sw{border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--panel-2)}
+.sw .chipc{height:42px; display:flex}
+.sw .chipc span{flex:1}
+.sw .m{padding:6px 8px; display:flex; flex-direction:column; gap:1px}
+.sw .m b{font-size:10.5px; font-weight:600; letter-spacing:.02em}
+.sw .m code{font-family:"Geist Mono",monospace; font-size:10px; color:var(--fg-3)}
+.sw .m code::before{content:"L "; opacity:.5}
+.sw .m code.dk::before{content:"D "}
+.typepair{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+.typerow{border:1px solid var(--line); border-radius:9px; padding:11px 13px; background:var(--panel-2)}
+.typerow .role{font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-3); font-weight:600}
+.typerow .samp{margin-top:5px; line-height:1.2}
+.deltas{display:flex; flex-direction:column; gap:9px; margin-top:12px}
+.delta{display:flex; gap:11px; align-items:flex-start; font-size:13.5px; color:var(--fg-2); line-height:1.5}
+.delta .n{
+  flex:0 0 auto; width:20px; height:20px; border-radius:50%;
+  background:var(--panel-3); color:var(--fg); font-size:10.5px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; margin-top:1px;
+  font-variant-numeric:tabular-nums;
+}
+.delta b{color:var(--fg); font-weight:600}
+.costs{display:flex; flex-wrap:wrap; gap:7px; margin-top:12px}
+.cost{font-size:11.5px; padding:4px 9px; border-radius:999px; border:1px solid var(--line); color:var(--fg-2); background:var(--panel-2)}
+
+footer{border-top:1px solid var(--line); padding-block:20px 40px; color:var(--fg-3); font-size:12.5px}
+footer p{max-width:74ch; line-height:1.6}
+footer b{color:var(--fg-2); font-weight:600}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.01ms !important; transition-duration:.01ms !important; scroll-behavior:auto !important}
+}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1>Badminton Queue — Sideline</h1>
+      <p class="sub">The chosen direction, across every screen, both themes, and the 44&nbsp;px target overlay. One token set drives all of it — which is the point: these tokens are what replace the inline <code>bg-green-600</code> / <code>bg-red-700</code> literals scattered through the components. Nothing here touches <code>sessionStore</code>, the hooks, or SQL.</p>
+    </div>
+    <div class="meta">
+      <span class="chip-scope">Direction A · Sideline</span>
+      <span class="chip-scope">Scope: re-skin + layout rework</span>
+      <span class="chip-scope">Before Phase 3</span>
+    </div>
+  </header>
+</div>
+
+<div class="controls">
+  <div class="wrap ctl-rows">
+    <div class="ctl-row">
+      <span class="ctl-label">Screen</span>
+      <div class="seg" id="segScreen">
+        <button data-screen="room" aria-pressed="true">Room</button>
+        <button data-screen="landing" aria-pressed="false">Landing</button>
+        <button data-screen="modal-add" aria-pressed="false">Add player</button>
+        <button data-screen="modal-batch" aria-pressed="false">Batch add</button>
+        <button data-screen="modal-confirm" aria-pressed="false">Confirm</button>
+        <button data-screen="rooms" aria-pressed="false">My rooms</button>
+        <button data-screen="tv" aria-pressed="false">TV mode</button>
+      </div>
+    </div>
+    <div class="ctl-row">
+      <span class="ctl-label">View</span>
+      <div class="seg" id="segWidth">
+        <button data-w="phone" aria-pressed="true">Phone</button>
+        <button data-w="tablet" aria-pressed="false">Tablet</button>
+        <button data-w="desk" aria-pressed="false">Desktop</button>
+      </div>
+      <div class="seg" id="segMode">
+        <button data-mode="light" aria-pressed="true">Light</button>
+        <button data-mode="dark" aria-pressed="false">Dark</button>
+      </div>
+      <button class="tog" id="togBefore" aria-pressed="false"><span class="dot"></span>Show today's UI</button>
+      <button class="tog" id="togTap" aria-pressed="false"><span class="dot"></span>44px targets</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="stage-head">
+    <h2 id="stageTitle">Room — the screen club night actually lives on</h2>
+    <p class="note" id="stageNote">Six players idle, two courts in play, four queued. The state you'd walk into twenty minutes after doors open.</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="tap-key">
+    <span class="pass"><i></i>Clears 44&nbsp;px</span>
+    <span class="fail"><i></i>Below 44&nbsp;px</span>
+    <span style="color:var(--fg-3)">Measured on Phone, where thumbs are the input. Switch on “Show today’s UI” to compare the same controls.</span>
+  </div>
+  <div class="stage">
+    <div class="frame" id="frame" data-w="phone">
+      <div class="frame-bar"><i></i><i></i><i></i><span class="url" id="frameUrl">badmintonqueue.app/s/K7RQ9M4T</span></div>
+      <div class="mock" id="mock" data-mode="light">
+
+        <!-- ============ ROOM ============ -->
+        <section class="screen" data-view="room">
+          <div class="share">
+            <div class="grow">
+              <div class="lbl">Room code</div>
+              <div class="code num">K7RQ9M4T</div>
+            </div>
+            <div class="acts">
+              <button class="btn btn-ghost btn-sm">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy link
+              </button>
+              <button class="btn btn-quiet btn-sm">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                Lock
+              </button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="courts-head">
+              <h2 class="mk-h lg">Courts</h2>
+              <div style="display:flex; align-items:center; gap:8px">
+                <span class="lbl">Courts</span>
+                <div class="stepper">
+                  <button type="button" aria-label="Fewer courts">−</button>
+                  <span class="v num">3</span>
+                  <button type="button" aria-label="More courts">+</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="courts-rail">
+              <article class="court">
+                <div class="court-top">
+                  <span class="court-no">Court 1</span>
+                  <span class="pill pill-live"><i></i>In play</span>
+                </div>
+                <div class="side side-1">
+                  <span class="lbl">Side 1</span>
+                  <span class="nm">Priya Raman <span class="skill" data-skill="4"><span class="rk"></span>Upper int</span></span>
+                  <span class="nm">Tom Okafor <span class="skill" data-skill="4"><span class="rk"></span>Upper int</span></span>
+                </div>
+                <div class="vs">vs</div>
+                <div class="side side-2">
+                  <span class="lbl">Side 2</span>
+                  <span class="nm">Dan Whitfield <span class="skill" data-skill="5"><span class="rk"></span>Advanced</span></span>
+                  <span class="nm">Mei Lin <span class="skill" data-skill="4"><span class="rk"></span>Upper int</span></span>
+                </div>
+                <button class="btn btn-danger btn-block">End game</button>
+              </article>
+
+              <article class="court">
+                <div class="court-top">
+                  <span class="court-no">Court 2</span>
+                  <span class="pill pill-live"><i></i>In play</span>
+                </div>
+                <div class="side side-1">
+                  <span class="lbl">Side 1</span>
+                  <span class="nm">Ade Salami <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+                  <span class="nm">Jo Baptiste <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+                </div>
+                <div class="vs">vs</div>
+                <div class="side side-2">
+                  <span class="lbl">Side 2</span>
+                  <span class="nm">Wei Chen <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+                  <span class="nm">Hannah Vos <span class="skill" data-skill="2"><span class="rk"></span>Beginner</span></span>
+                </div>
+                <button class="btn btn-danger btn-block">End game</button>
+              </article>
+
+              <article class="court">
+                <div class="court-top">
+                  <span class="court-no">Court 3</span>
+                  <span class="pill pill-open">Open</span>
+                </div>
+                <div class="court-empty">
+                  <p class="muted" style="font-size:13px">Nobody on this court.</p>
+                  <button class="btn btn-primary btn-sm">Send the next four</button>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="room-body">
+            <div class="panel">
+              <div class="panel-head">
+                <h2 class="mk-h lg">Queue</h2>
+                <button class="btn btn-quiet btn-sm">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M2 6h1.4c1.3 0 2.5.6 3.3 1.7l2.2 3M22 18h-5.9c-1.3 0-2.5-.6-3.3-1.7l-2.2-3"/></svg>
+                  Shuffle sides
+                </button>
+              </div>
+
+              <div class="upnext">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+                  <span class="lbl" style="color:var(--mk-accent)">Up next → Court 3</span>
+                  <span class="tiny num">4 of 6 waiting</span>
+                </div>
+                <div class="upnext-grid">
+                  <div class="side side-1" style="box-shadow:none">
+                    <span class="lbl">Side 1</span>
+                    <span class="nm">Sam Iyer</span>
+                    <span class="nm">Leah Duarte</span>
+                  </div>
+                  <div class="vs">vs</div>
+                  <div class="side side-2" style="box-shadow:none">
+                    <span class="lbl">Side 2</span>
+                    <span class="nm">Ravi Menon</span>
+                    <span class="nm">Kirsty Bell</span>
+                  </div>
+                </div>
+              </div>
+
+              <ul style="display:flex; flex-direction:column; gap:7px">
+                <li class="qrow">
+                  <span class="qpos num">5</span>
+                  <div class="qbody">
+                    <div class="qname">Nadia Haddad <span class="skill" data-skill="2"><span class="rk"></span>Beginner</span></div>
+                    <div class="tiny num">3 games today</div>
+                  </div>
+                  <button class="icon-btn" aria-label="Remove Nadia Haddad from the queue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
+                </li>
+                <li class="qrow">
+                  <span class="qpos num">6</span>
+                  <div class="qbody">
+                    <div class="qname">Otto Lindqvist <span class="skill" data-skill="6"><span class="rk"></span>Expert</span></div>
+                    <div class="tiny num">1 game today</div>
+                  </div>
+                  <button class="icon-btn" aria-label="Remove Otto Lindqvist from the queue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h2 class="mk-h lg">Players <span class="tiny num" style="font-weight:400">· 5 free</span></h2>
+                <div style="display:flex; gap:7px">
+                  <button class="btn btn-ghost btn-sm">Auto-pick 4</button>
+                  <button class="btn btn-primary btn-sm">Add</button>
+                  <button class="icon-btn" aria-label="More player actions">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="plist">
+                <div class="prow">
+                  <div class="pmain">
+                    <div class="pname">Grace Adeyemi <span class="skill" data-skill="5"><span class="rk"></span>Advanced</span></div>
+                    <div class="stepper">
+                      <button type="button" aria-label="One fewer game for Grace Adeyemi">−</button>
+                      <span class="v num">4</span>
+                      <button type="button" aria-label="One more game for Grace Adeyemi">+</button>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-sm">Queue</button>
+                  <button class="icon-btn" aria-label="Edit or remove Grace Adeyemi">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                </div>
+                <div class="prow">
+                  <div class="pmain">
+                    <div class="pname">Marcus Bell <span class="skill" data-skill="1"><span class="rk"></span>New</span></div>
+                    <div class="stepper">
+                      <button type="button" aria-label="One fewer game for Marcus Bell">−</button>
+                      <span class="v num">0</span>
+                      <button type="button" aria-label="One more game for Marcus Bell">+</button>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-sm">Queue</button>
+                  <button class="icon-btn" aria-label="Edit or remove Marcus Bell">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                </div>
+                <div class="prow">
+                  <div class="pmain">
+                    <div class="pname">Yusuf Karim <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></div>
+                    <div class="stepper">
+                      <button type="button" aria-label="One fewer game for Yusuf Karim">−</button>
+                      <span class="v num">2</span>
+                      <button type="button" aria-label="One more game for Yusuf Karim">+</button>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-sm">Queue</button>
+                  <button class="icon-btn" aria-label="Edit or remove Yusuf Karim">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                </div>
+                <div class="prow">
+                  <div class="pmain">
+                    <div class="pname">Ines Duarte <span class="skill" data-skill="2"><span class="rk"></span>Beginner</span></div>
+                    <div class="stepper">
+                      <button type="button" aria-label="One fewer game for Ines Duarte">−</button>
+                      <span class="v num">5</span>
+                      <button type="button" aria-label="One more game for Ines Duarte">+</button>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-sm">Queue</button>
+                  <button class="icon-btn" aria-label="Edit or remove Ines Duarte">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actionbar">
+            <div style="flex:1; min-width:0">
+              <div class="lbl">Court 3 is free</div>
+              <div style="font-size:13px; font-weight:600">Sam, Leah, Ravi, Kirsty</div>
+            </div>
+            <button class="btn btn-primary btn-lg">Start game</button>
+          </div>
+        </section>
+
+        <!-- ============ LANDING ============ -->
+        <section class="screen" data-view="landing" hidden>
+          <div class="landing-split">
+            <div class="hero">
+              <div class="eyebrow">
+                <span class="pill pill-live"><i></i>Live on every phone in the hall</span>
+              </div>
+              <h1>Nobody sits out twice in a row.</h1>
+              <p class="lede">Add your players, set your courts, and let it pick fair, skill-matched fours all night. Share one link — the tablet by the courts and every co-organiser stay in sync.</p>
+
+              <div class="hero-actions">
+                <button class="btn btn-primary btn-lg btn-block">Create a room</button>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:11px">
+                <span style="height:1px; background:var(--mk-line); flex:1"></span>
+                <span class="lbl">or join one</span>
+                <span style="height:1px; background:var(--mk-line); flex:1"></span>
+              </div>
+
+              <form class="joinbox" onsubmit="return false">
+                <label class="lbl" for="joinCode" style="position:absolute; left:-9999px">Room code</label>
+                <input class="field" id="joinCode" placeholder="K7RQ9M4T" maxlength="8">
+                <button class="btn btn-ghost btn-lg">Join</button>
+              </form>
+
+              <div class="hero-proof">
+                <div class="proof"><b class="num">6</b><span class="tiny">courts at once</span></div>
+                <div class="proof"><b class="num">0</b><span class="tiny">sign-ups for players</span></div>
+                <div class="proof"><b class="num">&lt;1s</b><span class="tiny">to reach every device</span></div>
+              </div>
+            </div>
+
+            <div class="hero-art">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <span class="lbl">Court 2 · in play</span>
+                <span class="pill pill-live"><i></i>Live</span>
+              </div>
+              <div class="side side-1">
+                <span class="lbl">Side 1</span>
+                <span class="nm">Ade Salami <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+                <span class="nm">Jo Baptiste <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+              </div>
+              <div class="vs">vs</div>
+              <div class="side side-2">
+                <span class="lbl">Side 2</span>
+                <span class="nm">Wei Chen <span class="skill" data-skill="3"><span class="rk"></span>Intermediate</span></span>
+                <span class="nm">Hannah Vos <span class="skill" data-skill="2"><span class="rk"></span>Beginner</span></span>
+              </div>
+              <div style="border-top:1px solid var(--mk-line); padding-top:9px; display:flex; align-items:center; justify-content:space-between; gap:8px">
+                <span class="tiny">Up next</span>
+                <span style="font-size:12px; font-weight:600">Sam · Leah · Ravi · Kirsty</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ MY ROOMS ============ -->
+        <section class="screen" data-view="rooms" hidden>
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px">
+            <div>
+              <h1 class="mk-h lg">My rooms</h1>
+              <p class="muted" style="margin-top:3px">Rooms you've created.</p>
+            </div>
+            <button class="btn btn-primary btn-sm">New room</button>
+          </div>
+
+          <div class="mk-card" style="padding:12px 13px; display:flex; gap:11px; align-items:flex-start; background:var(--mk-warn-soft); border-color:transparent">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--mk-warn)" stroke-width="2" stroke-linecap="round" style="flex:0 0 auto; margin-top:1px" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            <div>
+              <p style="font-size:13px; font-weight:600; color:var(--mk-warn)">These rooms live in this browser only</p>
+              <p class="tiny" style="margin-top:2px; line-height:1.5">Clear your site data or switch phones and they're gone. Sign in with Google to keep them.</p>
+              <button class="btn btn-ghost btn-sm" style="margin-top:9px">Sign in with Google</button>
+            </div>
+          </div>
+
+          <ul style="display:flex; flex-direction:column; gap:9px">
+            <li class="roomrow">
+              <div style="flex:1; min-width:0">
+                <div class="rc num">K7RQ9M4T</div>
+                <div class="tiny num" style="margin-top:2px">3 courts · 11 Sep 2026</div>
+              </div>
+              <span class="pill pill-live"><i></i>Today</span>
+              <button class="icon-btn" aria-label="Actions for room K7RQ9M4T">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </button>
+            </li>
+            <li class="roomrow">
+              <div style="flex:1; min-width:0">
+                <div class="rc num">TX4W8HB2</div>
+                <div class="tiny num" style="margin-top:2px">2 courts · 4 Sep 2026</div>
+              </div>
+              <span class="pill pill-warn">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                Locked
+              </span>
+              <button class="icon-btn" aria-label="Actions for room TX4W8HB2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </button>
+            </li>
+            <li class="roomrow">
+              <div style="flex:1; min-width:0">
+                <div class="rc num">M2QP7VKD</div>
+                <div class="tiny num" style="margin-top:2px">4 courts · 28 Aug 2026</div>
+              </div>
+              <button class="icon-btn" aria-label="Actions for room M2QP7VKD">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <!-- ============ TV MODE ============ -->
+        <section class="screen tv" data-view="tv" hidden style="padding:20px">
+          <div class="tv-head">
+            <div>
+              <div class="lbl">Thursday session · Courts 1–3</div>
+              <div class="tv-title">On court now</div>
+            </div>
+            <div style="text-align:right">
+              <div class="lbl">Room</div>
+              <div class="num" style="font-family:var(--mk-mono); font-size:19px; letter-spacing:.1em">K7RQ9M4T</div>
+            </div>
+          </div>
+
+          <div class="tv-courts">
+            <div class="tv-court">
+              <span class="cn">Court 1</span>
+              <div class="tv-name">Priya Raman</div>
+              <div class="tv-name">Tom Okafor</div>
+              <div class="tv-vs"></div>
+              <div class="tv-name">Dan Whitfield</div>
+              <div class="tv-name">Mei Lin</div>
+            </div>
+            <div class="tv-court">
+              <span class="cn">Court 2</span>
+              <div class="tv-name">Ade Salami</div>
+              <div class="tv-name">Jo Baptiste</div>
+              <div class="tv-vs"></div>
+              <div class="tv-name">Wei Chen</div>
+              <div class="tv-name">Hannah Vos</div>
+            </div>
+            <div class="tv-court" style="justify-content:center; align-items:center; text-align:center; gap:7px">
+              <span class="cn">Court 3</span>
+              <div class="tv-name" style="color:var(--mk-ink-3)">Free</div>
+              <div class="tiny">Sam, Leah, Ravi and Kirsty are up</div>
+            </div>
+          </div>
+
+          <div class="tv-next">
+            <span class="lbl">Waiting · longest first</span>
+            <div class="tv-queue">
+              <span class="tv-chip"><span class="n">1</span>Sam Iyer</span>
+              <span class="tv-chip"><span class="n">2</span>Leah Duarte</span>
+              <span class="tv-chip"><span class="n">3</span>Ravi Menon</span>
+              <span class="tv-chip"><span class="n">4</span>Kirsty Bell</span>
+              <span class="tv-chip"><span class="n">5</span>Nadia Haddad</span>
+              <span class="tv-chip"><span class="n">6</span>Otto Lindqvist</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ MODALS (overlay the room) ============ -->
+        <div class="modal-scrim" data-view="modal-add" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m1">
+            <div class="modal-grab"></div>
+            <h3 class="mk-h md" id="m1">Add a player</h3>
+            <div class="modal-field">
+              <label class="lbl" for="pName">Name</label>
+              <input class="modal-input" id="pName" placeholder="e.g. Priya Raman">
+            </div>
+            <div class="modal-field">
+              <span class="lbl">Skill — sets who they get matched with</span>
+              <div class="skillpick">
+                <button class="skillopt" type="button" aria-pressed="false" data-skill="1"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">New</span></button>
+                <button class="skillopt" type="button" aria-pressed="false" data-skill="2"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">Beginner</span></button>
+                <button class="skillopt" type="button" aria-pressed="true" data-skill="3"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">Intermediate</span></button>
+                <button class="skillopt" type="button" aria-pressed="false" data-skill="4"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">Upper int.</span></button>
+                <button class="skillopt" type="button" aria-pressed="false" data-skill="5"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">Advanced</span></button>
+                <button class="skillopt" type="button" aria-pressed="false" data-skill="6"><span class="skill" style="border:0; padding:0"><span class="rk"></span></span><span class="nmm">Expert</span></button>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-quiet">Cancel</button>
+              <button class="btn btn-primary">Add player</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-scrim" data-view="modal-batch" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m2">
+            <div class="modal-grab"></div>
+            <h3 class="mk-h md" id="m2">Add several players</h3>
+            <p class="muted">One per line, as <code style="font-family:var(--mk-mono); font-size:12px">Name, skill</code>. Every line needs both.</p>
+            <label class="lbl" for="batchTa" style="position:absolute; left:-9999px">Players to add</label>
+            <textarea class="modal-ta" id="batchTa" spellcheck="false">Priya Raman, upper intermediate
+Tom Okafor, upper intermediate
+Marcus Bell, new
+Wei Chen, intermediate
+Otto Lindqvist, expert</textarea>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+              <span class="tiny num">5 lines ready.</span>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-quiet">Cancel</button>
+              <button class="btn btn-primary">Add 5 players</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-scrim" data-view="modal-confirm" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m3">
+            <div class="modal-grab"></div>
+            <div style="display:flex; gap:12px; align-items:flex-start">
+              <span style="flex:0 0 auto; width:38px; height:38px; border-radius:50%; background:var(--mk-danger-soft); display:flex; align-items:center; justify-content:center">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--mk-danger)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+              </span>
+              <div>
+                <h3 class="mk-h md" id="m3">Remove everyone?</h3>
+                <p class="muted" style="margin-top:5px">All 11 players, both games in progress and the whole queue go. Games played counts go with them. You can't undo this.</p>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-quiet">Keep them</button>
+              <button class="btn btn-primary" style="background:var(--mk-danger); color:#fff">Remove all 11</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============ BEFORE — today's UI, reproduced honestly ============ -->
+      <div class="before" id="before" hidden>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap">
+          <div class="b-muted">Room code: <span style="font-family:monospace; font-weight:600; color:#111">K7RQ9M4T</span></div>
+          <div style="display:flex; gap:8px">
+            <span class="b-tap" style="font-size:12px; background:#f3f4f6; padding:4px 12px; border-radius:8px">🔓 Lock to just me</span>
+            <span class="b-tap" style="font-size:12px; background:#f3f4f6; padding:4px 12px; border-radius:8px">Copy invite link</span>
+          </div>
+        </div>
+
+        <div class="b-card" style="padding:24px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h1>Courts</h1>
+            <div style="display:flex; align-items:center; gap:8px">
+              <span style="font-size:13px">Number of Courts:</span>
+              <span style="border:1px solid #e5e7eb; border-radius:8px; padding:4px 8px; width:52px; display:inline-block">3</span>
+            </div>
+          </div>
+          <div class="b-card" style="padding:16px; border-width:2px; border-color:#f3f4f6">
+            <h2 style="text-align:center; border-bottom:1px solid #e5e7eb; padding-bottom:8px; margin-bottom:12px">Court 1</h2>
+            <div style="background:rgba(239,246,255,.5); border:1px solid #dbeafe; border-radius:8px; padding:8px; margin-bottom:16px">
+              <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:#2563eb; letter-spacing:.05em">Team 1</span>
+              <div style="font-size:14px; margin-top:4px; color:#1f2937; font-weight:500">Priya Raman <span style="font-size:12px; font-weight:400; color:#6b7280">(upper intermediate)</span></div>
+              <div style="font-size:14px; color:#1f2937; font-weight:500">Tom Okafor <span style="font-size:12px; font-weight:400; color:#6b7280">(upper intermediate)</span></div>
+            </div>
+            <div style="text-align:center; font-size:12px; font-weight:700; color:#6b7280; font-style:italic; margin-bottom:16px">VS</div>
+            <div style="background:rgba(254,242,242,.5); border:1px solid #fee2e2; border-radius:8px; padding:8px">
+              <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:#dc2626; letter-spacing:.05em">Team 2</span>
+              <div style="font-size:14px; margin-top:4px; color:#1f2937; font-weight:500">Dan Whitfield <span style="font-size:12px; font-weight:400; color:#6b7280">(advanced)</span></div>
+              <div style="font-size:14px; color:#1f2937; font-weight:500">Mei Lin <span style="font-size:12px; font-weight:400; color:#6b7280">(upper intermediate)</span></div>
+            </div>
+            <div style="margin-top:8px"><span class="b-btn r" style="display:block; text-align:center">End Game</span></div>
+          </div>
+        </div>
+
+        <div class="b-card" style="padding:16px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+            <h2>Queue</h2>
+            <span class="b-tap" style="font-size:10px; background:#f3f4f6; padding:4px 8px; border-radius:4px">⇄ Shuffle Teams</span>
+          </div>
+          <span class="b-btn" style="display:block; text-align:center; margin-bottom:12px">Start Game</span>
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-radius:8px; background:#eff6ff; border:1px solid #dbeafe">
+              <div>
+                <div style="font-size:14px; font-weight:500">1. Sam Iyer <span style="font-size:10px; color:#2563eb; font-weight:700">(T1)</span></div>
+                <div style="font-size:12px; color:#6b7280">intermediate | Games: 2</div>
+              </div>
+              <span class="b-btn gy" style="font-size:12px; padding:2px 8px">Remove</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-radius:8px; background:#fef2f2; border:1px solid #fee2e2">
+              <div>
+                <div style="font-size:14px; font-weight:500">3. Ravi Menon <span style="font-size:10px; color:#dc2626; font-weight:700">(T2)</span></div>
+                <div style="font-size:12px; color:#6b7280">upper intermediate | Games: 1</div>
+              </div>
+              <span class="b-btn gy" style="font-size:12px; padding:2px 8px">Remove</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="b-card" style="padding:16px">
+          <div style="display:flex; justify-content:space-between; margin-bottom:12px">
+            <h2>Players</h2>
+            <div style="display:flex; gap:8px">
+              <span class="b-btn g">Auto-Pick (4)</span>
+              <span class="b-btn">Add</span>
+              <span class="b-btn" style="padding:8px">⌄</span>
+            </div>
+          </div>
+          <div class="b-card" style="padding:12px; display:flex; justify-content:space-between; align-items:center">
+            <div>
+              <div style="font-size:15px">Grace Adeyemi (advanced) <span style="color:#6b7280">✎</span></div>
+              <div style="display:flex; align-items:center; margin-top:8px">
+                <span class="b-tap" style="display:inline-flex; align-items:center; border:1px solid #e5e7eb; border-radius:8px; height:28px; background:rgba(249,250,251,.5); font-size:12px">
+                  <span style="padding:0 8px; color:#4b5563">−</span>
+                  <span style="width:32px; text-align:center; font-weight:600; border-inline:1px solid #e5e7eb; line-height:26px">4</span>
+                  <span style="padding:0 8px; color:#4b5563">+</span>
+                </span>
+                <span style="margin-left:8px; font-size:10px; text-transform:uppercase; font-weight:700; color:#6b7280">Games</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px">
+              <span class="b-btn">Queue</span>
+              <span class="b-btn r">Delete</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="spec">
+    <div class="spec-card">
+      <p class="kicker" id="specKicker">Direction A</p>
+      <h3 id="specName">Sideline</h3>
+      <p id="specWhy"></p>
+
+      <p class="kicker" style="margin-top:18px">Tokens — chip split light / dark</p>
+      <div class="swatches" id="specSwatches"></div>
+
+      <div class="typepair" id="specType"></div>
+    </div>
+
+    <div class="spec-card">
+      <p class="kicker">What changes, regardless of direction</p>
+      <h3>Nine layout decisions</h3>
+      <div class="deltas">
+        <div class="delta"><span class="n">1</span><span><b>Every touch target clears 44&nbsp;px.</b> Today <code>Button</code> is <code>px-3 py-1</code> — about 24&nbsp;px tall, and every control in the app inherits it. Steppers compact back to 34&nbsp;px on tablet and desktop, where the input is a mouse.</span></div>
+        <div class="delta"><span class="n">2</span><span><b>Destructive moves out of thumb range.</b> Delete leaves the player row for an overflow menu; Queue becomes the one big tap.</span></div>
+        <div class="delta"><span class="n">3</span><span><b>Start game gets a sticky bar.</b> The most-tapped control of the night stops living mid-page inside the queue card.</span></div>
+        <div class="delta"><span class="n">4</span><span><b>Courts become a snap rail on phone.</b> Six courts don't fit in a vertical stack; they do fit in a swipe.</span></div>
+        <div class="delta"><span class="n">5</span><span><b>"Up next" is stated, not inferred.</b> Today you read it out of blue/red row tinting. Now it names the court it's heading to.</span></div>
+        <div class="delta"><span class="n">6</span><span><b>Skill gets an ordinal badge.</b> Six bands drive who plays whom, so they get a ramp dot and a short label instead of grey lowercase text in brackets.</span></div>
+        <div class="delta"><span class="n">7</span><span><b>The room code leads.</b> It's the whole sharing loop and it's currently 12&nbsp;px grey.</span></div>
+        <div class="delta"><span class="n">8</span><span><b>Team 1 / Team 2 become Side 1 / Side 2.</b> They aren't teams — they're whoever the auto-pick put on each half of one court.</span></div>
+        <div class="delta"><span class="n">9</span><span><b>Emoji icons become real SVGs.</b> 🏸🔒📝🗑️⚠️ render differently on every platform.</span></div>
+      </div>
+
+      <div class="costs">
+        <span class="cost">Tokens in <code>globals.css</code></span>
+        <span class="cost">Rewrite <code>ui.tsx</code> primitives</span>
+        <span class="cost">Fix the Geist/Arial bug</span>
+        <span class="cost">Add dark mode</span>
+        <span class="cost">No schema change</span>
+        <span class="cost">No RLS change</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p><b>Deliberately out of scope.</b> Two ideas the layout leaves room for but this pass doesn't build: a <b>QR code</b> beside the room code, so players join by pointing a camera at the organiser's phone; and a <b>per-court elapsed timer</b>, which would need a <code>started_at</code> column and therefore a migration. Both are Phase&nbsp;4 conversations.</p>
+    <p style="margin-top:10px"><b>Not a working app.</b> Controls here change the preview, not any data. Player names and room codes are invented; the codes follow the app's real unambiguous alphabet (no I, L, O, 0 or 1).</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Chosen 11 Sep 2026. Each colour carries both theme values, because dark
+  // mode ships with this pass — the app has none today.
+  var SPEC = {
+    name:"Sideline", kicker:"Direction A · chosen",
+    why:"The premium-utility read. Nothing shouts, so nothing dates — the confidence comes from spacing, a single petrol-teal accent, and neutrals biased cool toward it rather than a default mid-grey. It's the direction that looks least like a hobby project on a pricing page, which is the thing that matters next, because Phase 3 is where the app starts asking people for money.",
+    colors:[
+      ["Ground","#F7F8FA","#0F1418"],
+      ["Surface","#FFFFFF","#171E24"],
+      ["Ink","#14181F","#E8EDF2"],
+      ["Ink muted","#5A6472","#9AA6B2"],
+      ["Line","#DFE4EA","#28323A"],
+      ["Petrol teal","#14607A","#4FBFD9"],
+      ["Side 1","#1E5F8C","#68B3E8"],
+      ["Side 2","#9A4A18","#E29A67"],
+      ["Danger","#B3261E","#F08B84"]
+    ],
+    type:[["Display","Archivo 700","Courts"],["Body","Geist 400/600","Priya Raman · 4 games"],["Data","Geist Mono","K7RQ9M4T"]]
+  };
+
+  var TITLES = {
+    room:["Room — the screen club night actually lives on","Six players idle, two courts in play, four queued. The state you'd walk into twenty minutes after doors open."],
+    landing:["Landing — the create-room conversion point","Currently a single centred card. This one states what the tool is for before asking for a tap."],
+    "modal-add":["Add player — skill as a picker, not a dropdown","A native select reports its first option when handed an unknown value. A visible six-up grid can't silently demote anyone."],
+    "modal-batch":["Batch add — errors counted before you commit","Today you paste, press Import, and find out. This counts valid lines as you type."],
+    "modal-confirm":["Confirm — the consequence, then the count","Today's copy opens with \"DANGER:\". This says what disappears and how many, and puts the count on the button."],
+    rooms:["My rooms — with the anonymous-account warning in place","The browser-only caveat is the most important thing on this screen, so it isn't a grey paragraph."],
+    tv:["TV mode — a Phase 4 Pro feature, shown here to stretch the system","Whether the tokens survive a 55-inch screen across the hall is a useful test of whether they're real tokens."]
+  };
+
+  var URLS = {
+    room:"badmintonqueue.app/s/K7RQ9M4T", landing:"badmintonqueue.app",
+    "modal-add":"badmintonqueue.app/s/K7RQ9M4T", "modal-batch":"badmintonqueue.app/s/K7RQ9M4T",
+    "modal-confirm":"badmintonqueue.app/s/K7RQ9M4T", rooms:"badmintonqueue.app/rooms",
+    tv:"badmintonqueue.app/s/K7RQ9M4T/tv"
+  };
+
+  var state = {screen:"room", w:"phone", mode:"light", before:false, tap:false};
+  try{
+    var saved = JSON.parse(localStorage.getItem("bq-redesign") || "null");
+    if(saved && typeof saved === "object"){ Object.keys(state).forEach(function(k){ if(k in saved) state[k] = saved[k]; }); }
+  }catch(e){ /* private mode, blocked storage — defaults are fine */ }
+
+  var frame = document.getElementById("frame");
+  var mock = document.getElementById("mock");
+  var before = document.getElementById("before");
+  var views = Array.prototype.slice.call(mock.querySelectorAll("[data-view]"));
+
+  function pressGroup(id, attr, value){
+    var g = document.getElementById(id);
+    if(!g) return;
+    Array.prototype.forEach.call(g.querySelectorAll("button"), function(b){
+      b.setAttribute("aria-pressed", String(b.getAttribute(attr) === value));
+    });
+  }
+
+  function renderSpec(){
+    var s = SPEC;
+    document.getElementById("specKicker").textContent = s.kicker;
+    document.getElementById("specName").textContent = s.name;
+    document.getElementById("specWhy").textContent = s.why;
+
+    var sw = document.getElementById("specSwatches");
+    sw.textContent = "";
+    s.colors.forEach(function(c){
+      var d = document.createElement("div"); d.className = "sw";
+      var chip = document.createElement("div"); chip.className = "chipc";
+      [c[1], c[2]].forEach(function(hex){
+        var half = document.createElement("span"); half.style.background = hex; chip.appendChild(half);
+      });
+      var m = document.createElement("div"); m.className = "m";
+      var b = document.createElement("b"); b.textContent = c[0];
+      var lo = document.createElement("code"); lo.textContent = c[1];
+      var hi = document.createElement("code"); hi.textContent = c[2]; hi.className = "dk";
+      m.appendChild(b); m.appendChild(lo); m.appendChild(hi);
+      d.appendChild(chip); d.appendChild(m); sw.appendChild(d);
+    });
+
+    var tp = document.getElementById("specType");
+    tp.textContent = "";
+    s.type.forEach(function(t){
+      var row = document.createElement("div"); row.className = "typerow";
+      var role = document.createElement("div"); role.className = "role"; role.textContent = t[0] + " · " + t[1];
+      var samp = document.createElement("div"); samp.className = "samp"; samp.textContent = t[2];
+      // "Geist Mono" would otherwise split down to "Geist" and render the
+      // data sample in the body face.
+      var fam = t[0] === "Data" ? "Geist Mono" : t[1].split(" ")[0];
+      samp.style.fontFamily = '"' + fam + '", ' + (t[0] === "Data" ? "monospace" : "sans-serif");
+      samp.style.fontSize = t[0] === "Display" ? "26px" : "17px";
+      samp.style.fontWeight = t[0] === "Display" ? "700" : "500";
+      if(t[0] === "Data"){ samp.style.letterSpacing = ".1em"; }
+      row.appendChild(role); row.appendChild(samp); tp.appendChild(row);
+    });
+  }
+
+  function apply(){
+    mock.setAttribute("data-mode", state.mode);
+    frame.setAttribute("data-w", state.w);
+    document.body.setAttribute("data-tap", state.tap ? "on" : "off");
+
+    var isModal = state.screen.indexOf("modal-") === 0;
+    views.forEach(function(v){
+      var n = v.getAttribute("data-view");
+      var show = n === state.screen || (isModal && n === "room");
+      v.hidden = !show;
+    });
+
+    before.hidden = !state.before;
+    mock.hidden = state.before;
+
+    document.getElementById("togBefore").setAttribute("aria-pressed", String(state.before));
+    document.getElementById("togTap").setAttribute("aria-pressed", String(state.tap));
+    pressGroup("segScreen", "data-screen", state.screen);
+    pressGroup("segWidth", "data-w", state.w);
+    pressGroup("segMode", "data-mode", state.mode);
+
+    var t = TITLES[state.screen] || TITLES.room;
+    document.getElementById("stageTitle").textContent = state.before ? "Today's room screen, reproduced" : t[0];
+    document.getElementById("stageNote").textContent = state.before
+      ? "Arial (the loaded Geist never applies), 24px buttons, Delete beside Queue, emoji icons. Turn on the 44px overlay to see the targets."
+      : t[1];
+    document.getElementById("frameUrl").textContent = URLS[state.screen] || URLS.room;
+
+    renderSpec();
+    try{ localStorage.setItem("bq-redesign", JSON.stringify(state)); }catch(e){ /* ignore */ }
+  }
+
+  document.addEventListener("click", function(ev){
+    var b = ev.target.closest ? ev.target.closest("button") : null;
+    if(!b) return;
+    if(b.hasAttribute("data-screen")){ state.screen = b.getAttribute("data-screen"); apply(); return; }
+    if(b.hasAttribute("data-w")){ state.w = b.getAttribute("data-w"); apply(); return; }
+    if(b.hasAttribute("data-mode")){ state.mode = b.getAttribute("data-mode"); apply(); return; }
+    if(b.id === "togBefore"){ state.before = !state.before; apply(); return; }
+    if(b.id === "togTap"){ state.tap = !state.tap; apply(); return; }
+
+    // Let the skill picker in the Add-player mock behave like the real one.
+    if(b.classList.contains("skillopt")){
+      Array.prototype.forEach.call(b.parentNode.children, function(o){ o.setAttribute("aria-pressed","false"); });
+      b.setAttribute("aria-pressed","true");
+    }
+  });
+
+  apply();
+})();
+</script>
+</body>
+</html>

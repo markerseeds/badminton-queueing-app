@@ -150,12 +150,52 @@ RLS semantics gotcha that shapes assertions: a blocked INSERT raises `42501`, bu
 UPDATE/DELETE simply matches **no rows and returns no error**. Assert that nothing changed, not that
 an error came back. (`deleteRoom` in `sessionStore` translates this into a real error for the UI.)
 
+## Styling: tokens in CSS, layout in JSX
+
+[app/globals.css](app/globals.css) holds the whole design system. The visual spec it implements is
+[docs/design/redesign-mockup.html](docs/design/redesign-mockup.html) — an interactive mockup whose
+`--mk-*` variables are a 1:1 rename of the `--bq-*` ones here, so the two stay diffable.
+
+**One rule decides where a style goes:**
+
+> If the mockup gave it a class name, it's a component class in `globals.css`. If it appears once,
+> it's Tailwind utilities in the JSX. Tokens are only ever colours and fonts.
+
+That split is forced, not stylistic. `@theme` exposes **only `--color-*` and `--font-*`**, because
+those are the two namespaces `tailwind-merge` arbitrates for names it has never seen — `bg-surface`
+correctly conflicts with `bg-danger`. A `--radius-card` would produce a `rounded-card` that does
+*not* conflict with `rounded-lg` (both survive, stylesheet order decides), and a `--text-lbl` is
+worse: tailwind-merge scores an unknown `text-*` as a colour, so a later `text-ink` would silently
+delete the font size. Radius, shadow and sizing therefore stay raw `--bq-*` variables used by the
+component classes; from JSX reach them as `rounded-(--bq-radius)`, which *is* arbitrated.
+[tests/lib/cn.test.ts](tests/lib/cn.test.ts) pins all of this down — read it before adding a token.
+
+`@theme inline` is load-bearing: it makes `bg-surface` compile to `background-color:
+var(--bq-surface)` rather than `var(--color-surface)`, which is what lets the dark block re-point
+every utility with **no `dark:` variants anywhere**. Plain `@theme` would snapshot the light value.
+
+Dark mode follows the OS. The `[data-theme]` blocks are a dormant hook for a future toggle; the dark
+values are deliberately duplicated between the media query and the attribute selector because CSS
+can't share a block between them — **edit both**.
+
+Tailwind declares `@layer theme, base, components, utilities`, so a utility passed through `cn()`
+beats any component class regardless of specificity. That's why `cn("prow-acts", readOnly &&
+"hidden")` works, and why base rules must stay inside `@layer base`.
+
 ## Conventions
 
 - Comments explain *why*, not what — the codebase carries its rationale inline, especially around
   RLS, auth, and race safety. Match that density when touching those areas.
 - `cn()` ([app/lib/cn.ts](app/lib/cn.ts)) merges class names so a passed utility beats the base one.
-  Components in [app/components/ui.tsx](app/components/ui.tsx) all use it.
+  Components in [app/components/ui.tsx](app/components/ui.tsx) all use it. `Button` takes a
+  `variant` (`primary` / `ghost` / `quiet` / `danger` / `dangerSolid`) rather than a raw colour
+  class; the variants are registered with tailwind-merge so a passed one still wins.
+- Every touch target clears 44px (`--bq-touch`). Steppers relax to 34px from `md` up, where the
+  input is a mouse. Don't reintroduce a control shorter than that on a phone.
+- `Player.skill` is a plain `string`, not the `Skill` union, so a row can hold a band outside
+  `SKILLS`. Anything that renders or offers a skill goes through
+  [app/lib/skillDisplay.ts](app/lib/skillDisplay.ts), which keeps the legacy value visible instead
+  of silently demoting it.
 - Next.js 16: route `params` are async (`Promise<{ code: string }>`).
 - Share codes are uppercase, from an unambiguous alphabet (no I/L/O/0/1); routes normalize with
   `.toUpperCase()`.

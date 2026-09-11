@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import { SKILLS } from "../lib/constants";
 import type { NewPlayer } from "../lib/types";
-import { Button, Card, Input, Select } from "./ui";
+import { SkillPicker } from "./SkillPicker";
+import { Button } from "./ui";
+
+// A player added in a hurry should land mid-range rather than at the bottom:
+// skill drives the ±1 band window in pickFourPlayers, so defaulting to "new"
+// quietly strands anyone nobody triaged at the bottom of the ladder all night.
+const DEFAULT_SKILL = "intermediate";
 
 export function AddPlayerModal({
   onSubmit,
@@ -14,53 +19,58 @@ export function AddPlayerModal({
   onCancel: () => void;
 }) {
   const [playerName, setPlayerName] = useState("");
-  const [skill, setSkill] = useState(SKILLS[0]);
+  const [skill, setSkill] = useState(DEFAULT_SKILL);
 
   useEscapeKey(onCancel);
 
-  const handleAdd = () => {
-    if (!playerName.trim()) return;
-    onSubmit({ name: playerName.trim(), skill });
+  const trimmedName = playerName.trim();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trimmedName) return;
+    onSubmit({ name: trimmedName, skill });
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
-      <Card
+    <div className="modal-scrim z-40">
+      <form
+        className="modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-player-title"
-        className="p-6 w-full max-w-sm"
+        onSubmit={handleSubmit}
       >
-        <h3 id="add-player-title" className="font-semibold mb-4">
-          Add Player
+        <div className="modal-grab" aria-hidden="true" />
+
+        <h3 id="add-player-title" className="heading text-base">
+          Add a player
         </h3>
-        <div className="flex flex-col justify-between gap-2 mt-4">
-          <Input
+
+        <div className="modal-field">
+          <label className="lbl" htmlFor="add-player-name">
+            Name
+          </label>
+          <input
             autoFocus
-            aria-label="Player name"
-            placeholder="Name"
+            id="add-player-name"
+            className="modal-input"
+            placeholder="e.g. Priya Raman"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
           />
-          <Select
-            aria-label="Skill level"
-            className="mt-3"
-            value={skill}
-            onChange={(e) => setSkill(e.target.value)}
-          >
-            {SKILLS.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </Select>
         </div>
 
-        <div className="flex justify-end gap-2 mt-4">
-          <Button className="bg-gray-600" onClick={onCancel}>
+        <SkillPicker value={skill} onChange={setSkill} />
+
+        <div className="modal-actions">
+          <Button variant="quiet" onClick={onCancel}>
             Cancel
           </Button>
-          <Button onClick={handleAdd}>Add</Button>
+          <Button type="submit" disabled={!trimmedName}>
+            Add player
+          </Button>
         </div>
-      </Card>
+      </form>
     </div>
   );
 }

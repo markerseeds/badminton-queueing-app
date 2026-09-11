@@ -1,19 +1,1132 @@
+/* =========================================================================
+   Badminton Queue — design tokens and component styles.
+
+   The visual spec is docs/design/redesign-mockup.html (direction A,
+   "Sideline"). The raw variables below are a 1:1 rename of that file's
+   `--mk-*` to `--bq-*`, so the mockup stays diffable against this file.
+
+   Two vocabularies, one mapping:
+     hand-written CSS here  ->  var(--bq-surface)
+     Tailwind utilities in JSX  ->  bg-surface
+
+   ========================================================================= */
+
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Escape hatch only. Dark mode is delivered by re-pointing the token variables
+   below, so `dark:` is needed solely where dark wants a *different utility*
+   rather than a different value — which should be approximately never. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(html:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where(html[data-theme="dark"] *) {
+    @slot;
+  }
 }
+
+/* =========================================================================
+   1. TOKENS — raw values. One name per decision.
+   ========================================================================= */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces, lightest ground to deepest recess. */
+  --bq-ground: #f7f8fa;
+  --bq-surface: #ffffff;
+  --bq-surface-2: #f0f3f6;
+  --bq-sunken: #eaeef2;
+
+  /* Text, in descending emphasis. */
+  --bq-ink: #14181f;
+  --bq-ink-2: #5a6472;
+  --bq-ink-3: #8a94a3;
+
+  /* Hairlines. `line-2` is the heavier one, for dashed and focus edges. */
+  --bq-line: #dfe4ea;
+  --bq-line-2: #c8d0d9;
+
+  /* The single accent. Neutrals above are biased cool toward it on purpose. */
+  --bq-accent: #14607a;
+  --bq-on-accent: #ffffff;
+  --bq-accent-soft: #e4eff3;
+
+  /* The two sides of a court. Deliberately NOT the accent and NOT danger:
+     today's UI reuses blue for both "Team 1" and links, and red for "Team 2",
+     destructive and error. These four exist so those meanings stop colliding. */
+  --bq-t1: #1e5f8c;
+  --bq-t1-soft: #e8f1f8;
+  --bq-t2: #9a4a18;
+  --bq-t2-soft: #fbefe6;
+
+  /* Status. Separate from the accent, as semantic colour should be. */
+  --bq-ok: #1e7a4f;
+  --bq-warn: #8a5a00;
+  --bq-warn-soft: #fbf2df;
+  --bq-danger: #b3261e;
+  --bq-danger-soft: #fbeae8;
+  --bq-on-danger: #ffffff;
+
+  /* Shape and depth. Not theme tokens — see the @theme note below. */
+  --bq-radius: 10px;
+  --bq-radius-sm: 7px;
+  --bq-radius-lg: 14px;
+  --bq-shadow:
+    0 1px 2px rgb(20 24 31 / 0.05), 0 6px 18px -10px rgb(20 24 31 / 0.22);
+
+  /* Thumb-sized. 44px is the iOS/WCAG floor and this is a courtside tool. */
+  --bq-touch: 44px;
+
+  /* Label and heading typography, so the treatment is set in one place. */
+  --bq-label-tracking: 0.06em;
+  --bq-label-weight: 600;
+  --bq-heading-tracking: -0.015em;
+}
+
+/* Dark, twice.
+
+   The media query is the one that fires today: dark follows the OS, and there
+   is no toggle. The [data-theme] block is a dormant hook — a future toggle
+   sets the attribute, and the `:not([data-theme="light"])` guard above lets it
+   force light even when the OS says dark. Both are (0,2,0), so the attribute
+   block must stay last to win.
+
+   The two bodies are identical on purpose. CSS offers no way to share a
+   declaration block between a media query and a selector, and `light-dark()`
+   is not safe here: on a browser without support the custom property still
+   parses, then every `var(--bq-surface)` becomes invalid at computed-value
+   time and resolves to `unset` — i.e. transparent surfaces on whatever phone
+   somebody brings to the hall. Keep the two blocks adjacent and EDIT BOTH. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bq-ground: #0f1418;
+    --bq-surface: #171e24;
+    --bq-surface-2: #1e262e;
+    --bq-sunken: #131a20;
+
+    --bq-ink: #e8edf2;
+    --bq-ink-2: #9aa6b2;
+    --bq-ink-3: #6e7a87;
+
+    --bq-line: #28323a;
+    --bq-line-2: #37434d;
+
+    /* Lifted, not inverted: #14607A on a dark ground fails contrast. */
+    --bq-accent: #4fbfd9;
+    --bq-on-accent: #08171c;
+    --bq-accent-soft: #12333d;
+
+    --bq-t1: #68b3e8;
+    --bq-t1-soft: #132836;
+    --bq-t2: #e29a67;
+    --bq-t2-soft: #33241a;
+
+    --bq-ok: #54c89a;
+    --bq-warn: #e0b15c;
+    --bq-warn-soft: #33290f;
+    --bq-danger: #f08b84;
+    --bq-danger-soft: #3a1d1a;
+    /* Dark ink on the lifted pink — white here would fail contrast outright. */
+    --bq-on-danger: #2a1210;
+
+    --bq-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 6px 18px -10px rgb(0 0 0 / 0.8);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bq-ground: #0f1418;
+  --bq-surface: #171e24;
+  --bq-surface-2: #1e262e;
+  --bq-sunken: #131a20;
+
+  --bq-ink: #e8edf2;
+  --bq-ink-2: #9aa6b2;
+  --bq-ink-3: #6e7a87;
+
+  --bq-line: #28323a;
+  --bq-line-2: #37434d;
+
+  /* Lifted, not inverted: #14607A on a dark ground fails contrast. */
+  --bq-accent: #4fbfd9;
+  --bq-on-accent: #08171c;
+  --bq-accent-soft: #12333d;
+
+  --bq-t1: #68b3e8;
+  --bq-t1-soft: #132836;
+  --bq-t2: #e29a67;
+  --bq-t2-soft: #33241a;
+
+  --bq-ok: #54c89a;
+  --bq-warn: #e0b15c;
+  --bq-warn-soft: #33290f;
+  --bq-danger: #f08b84;
+  --bq-danger-soft: #3a1d1a;
+  /* Dark ink on the lifted pink — white here would fail contrast outright. */
+  --bq-on-danger: #2a1210;
+
+  --bq-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 6px 18px -10px rgb(0 0 0 / 0.8);
+}
+
+/* =========================================================================
+   2. THEME — the only tokens that become Tailwind utilities.
+
+   `inline` is load-bearing. It makes `bg-surface` compile to
+   `background-color: var(--bq-surface)` rather than `var(--color-surface)`,
+   so the dark block above re-points every utility with no `dark:` anywhere.
+   Plain @theme would snapshot the light value into :root and dark would
+   silently do nothing.
+
+   Only colours and fonts are exposed, because those are the two namespaces
+   tailwind-merge arbitrates for names it has never seen. A `--radius-card`
+   would produce a `rounded-card` that does NOT conflict with `rounded-lg`
+   (both survive, stylesheet order decides), and a `--text-lbl` is worse still
+   — tailwind-merge scores an unknown `text-*` as a colour, so a later
+   `text-ink` would silently delete the font size. Radius, shadow and sizing
+   therefore stay as raw variables used by the component classes below; from
+   JSX, reach them as `rounded-(--bq-radius)`, which IS arbitrated.
+   All of this is pinned by tests/lib/cn.test.ts.
+   ========================================================================= */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ground: var(--bq-ground);
+  --color-surface: var(--bq-surface);
+  --color-surface-2: var(--bq-surface-2);
+  --color-sunken: var(--bq-sunken);
+
+  --color-ink: var(--bq-ink);
+  --color-ink-2: var(--bq-ink-2);
+  --color-ink-3: var(--bq-ink-3);
+
+  --color-line: var(--bq-line);
+  --color-line-2: var(--bq-line-2);
+
+  --color-accent: var(--bq-accent);
+  --color-on-accent: var(--bq-on-accent);
+  --color-accent-soft: var(--bq-accent-soft);
+
+  --color-t1: var(--bq-t1);
+  --color-t1-soft: var(--bq-t1-soft);
+  --color-t2: var(--bq-t2);
+  --color-t2-soft: var(--bq-t2-soft);
+
+  --color-ok: var(--bq-ok);
+  --color-warn: var(--bq-warn);
+  --color-warn-soft: var(--bq-warn-soft);
+  --color-danger: var(--bq-danger);
+  --color-danger-soft: var(--bq-danger-soft);
+  --color-on-danger: var(--bq-on-danger);
+
+  /* next/font injects these on <html> (see app/layout.tsx). The fallbacks are
+     inside the var() on purpose: Tailwind's preflight sets font-family on
+     `html`, and if the variable were ever undefined there the whole
+     declaration would be invalid at computed-value time and the page would
+     drop to the browser's default serif. */
+  --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-geist-mono, ui-monospace, SFMono-Regular, monospace);
+  --font-display: var(
+    --font-archivo,
+    var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif)
+  );
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* =========================================================================
+   3. BASE
+   These live inside @layer base deliberately. Unlayered author CSS outranks
+   every cascade layer, so a bare `body { background }` would beat a
+   `bg-surface` passed from JSX.
+   ========================================================================= */
+
+@layer base {
+  body {
+    background: var(--bq-ground);
+    color: var(--bq-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--bq-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* =========================================================================
+   4. COMPONENTS — ported from docs/design/redesign-mockup.html.
+
+   The rule for what belongs here vs. in JSX:
+
+     If the mockup gave it a class name, it is a component class here.
+     If it appears once, it is Tailwind utilities in the JSX.
+
+   That split is not stylistic. These classes own exactly the properties
+   tailwind-merge cannot arbitrate for custom names (radius, shadow,
+   min-height, padding, font-size); utilities own exactly what it arbitrates
+   perfectly (colour, flex/grid, gap, width, responsive prefixes).
+
+   Tailwind declares `@layer theme, base, components, utilities`, so a utility
+   passed through cn() beats anything here regardless of specificity — which is
+   what lets `cn("prow-acts", readOnly && "hidden")` work.
+   ========================================================================= */
+
+@layer components {
+  /* --- Type ------------------------------------------------------------ */
+
+  .heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: var(--bq-heading-tracking);
+    line-height: 1.14;
+  }
+
+  .lbl {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: var(--bq-label-tracking);
+    font-weight: var(--bq-label-weight);
+    color: var(--bq-ink-3);
+  }
+
+  .muted {
+    color: var(--bq-ink-2);
+    font-size: 0.8125rem;
+  }
+
+  .tiny {
+    font-size: 0.6875rem;
+    color: var(--bq-ink-3);
+  }
+
+  /* Wherever digits line up in a column or change in place. */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Buttons ---------------------------------------------------------
+     Every target clears 44px. The old base was `px-3 py-1` — about 24px —
+     which is roughly half the iOS/WCAG floor, on a tool used one-handed at
+     the side of a court. */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4375rem;
+    min-height: var(--bq-touch);
+    padding-inline: 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--bq-radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      filter 0.15s,
+      background-color 0.15s;
+  }
+
+  .btn:hover:not(:disabled) {
+    filter: brightness(0.94);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--bq-accent);
+    color: var(--bq-on-accent);
+  }
+
+  .btn-ghost {
+    background: var(--bq-surface-2);
+    color: var(--bq-ink);
+    border-color: var(--bq-line);
+  }
+
+  .btn-quiet {
+    background: transparent;
+    color: var(--bq-ink-2);
+    border-color: var(--bq-line);
+  }
+
+  /* Destructive reads as a tinted surface, not a solid red slab: it sits next
+     to primary actions all over this UI and should not out-shout them. */
+  .btn-danger {
+    background: var(--bq-danger-soft);
+    color: var(--bq-danger);
+  }
+
+  /* The exception: when destructive IS the primary action of a confirmation
+     dialog, it should look like the commitment it is. */
+  .btn-danger-solid {
+    background: var(--bq-danger);
+    color: var(--bq-on-danger);
+  }
+
+  .btn-sm {
+    min-height: var(--bq-touch);
+    padding-inline: 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .btn-lg {
+    min-height: 3.25rem;
+    padding-inline: 1.375rem;
+    font-size: 1rem;
+  }
+
+  .btn-block {
+    width: 100%;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--bq-touch);
+    height: var(--bq-touch);
+    flex: 0 0 auto;
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    background: var(--bq-surface);
+    color: var(--bq-ink-2);
+    transition:
+      color 0.15s,
+      background-color 0.15s;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    background: var(--bq-surface-2);
+    color: var(--bq-ink);
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* --- Surfaces --------------------------------------------------------- */
+
+  .card {
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius);
+    box-shadow: var(--bq-shadow);
+  }
+
+  /* --- Pills and badges ------------------------------------------------- */
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    padding: 0.1875rem 0.5625rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .pill > .dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .pill-live {
+    background: var(--bq-accent-soft);
+    color: var(--bq-accent);
+  }
+
+  .pill-open {
+    background: var(--bq-surface-2);
+    color: var(--bq-ink-3);
+  }
+
+  .pill-warn {
+    background: var(--bq-warn-soft);
+    color: var(--bq-warn);
+  }
+
+  /* Skill badge. Six bands drive who plays whom, so they have to be scannable
+     — but the label always sits on --bq-ink and only the dot carries the ramp,
+     so contrast can't fail at the saturated end. */
+  .skill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    padding: 0.125rem 0.5rem 0.125rem 0.375rem;
+    border: 1px solid var(--bq-line);
+    border-radius: 999px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bq-ink-2);
+    white-space: nowrap;
+  }
+
+  .skill > .rk {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    /* Plain colour first: color-mix is Baseline 2023 and this renders on
+       whatever phone somebody brings to the hall. */
+    background: var(--bq-line-2);
+    background: color-mix(
+      in oklab,
+      var(--bq-accent) var(--bq-mix, 50%),
+      var(--bq-line-2)
+    );
+  }
+
+  /* Rank 0 is an unrecognized band — it keeps the neutral 50% default. */
+  [data-skill="1"] > .rk {
+    --bq-mix: 10%;
+  }
+  [data-skill="2"] > .rk {
+    --bq-mix: 28%;
+  }
+  [data-skill="3"] > .rk {
+    --bq-mix: 46%;
+  }
+  [data-skill="4"] > .rk {
+    --bq-mix: 64%;
+  }
+  [data-skill="5"] > .rk {
+    --bq-mix: 82%;
+  }
+  [data-skill="6"] > .rk {
+    --bq-mix: 100%;
+  }
+
+  /* --- Form controls ---------------------------------------------------- */
+
+  .field {
+    width: 100%;
+    min-height: var(--bq-touch);
+    padding-inline: 0.8125rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    color: var(--bq-ink);
+    font-size: 0.9375rem;
+  }
+
+  .field::placeholder {
+    color: var(--bq-ink-3);
+  }
+
+  .field:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Numeric stepper. 44px is a thumb requirement, so it relaxes to 34px from
+     tablet up, where the input is a mouse. */
+  .stepper {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    height: var(--bq-touch);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    background: var(--bq-sunken);
+    overflow: hidden;
+  }
+
+  .stepper > button {
+    flex: 0 0 auto;
+    width: 2.625rem;
+    height: 100%;
+    color: var(--bq-ink-2);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    transition:
+      color 0.15s,
+      background-color 0.15s;
+  }
+
+  .stepper > button:hover:not(:disabled) {
+    background: var(--bq-surface-2);
+    color: var(--bq-ink);
+  }
+
+  .stepper > button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  /* Also used on an <input> (the games counter is typeable), so the block
+     borders have to be cleared explicitly — the UA default would show. */
+  .stepper > .v {
+    flex: 0 0 auto;
+    width: 2.125rem;
+    height: 100%;
+    border: 0;
+    border-inline: 1px solid var(--bq-line);
+    background: transparent;
+    color: inherit;
+    text-align: center;
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stepper > .v:disabled {
+    opacity: 0.6;
+  }
+
+  @media (min-width: 768px) {
+    .stepper {
+      height: 2.125rem;
+    }
+    .stepper > button {
+      width: 2rem;
+      font-size: 0.9375rem;
+    }
+    .stepper > .v {
+      width: 1.875rem;
+      font-size: 0.8125rem;
+    }
+  }
+
+  /* --- Modals ----------------------------------------------------------- */
+
+  .modal-scrim {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 1rem;
+    background: rgb(20 24 31 / 0.52);
+    background: color-mix(in srgb, var(--bq-ink) 52%, transparent);
+  }
+
+  @media (min-width: 640px) {
+    .modal-scrim {
+      align-items: center;
+    }
+  }
+
+  .modal {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    width: 100%;
+    max-width: 26rem;
+    padding: 1.125rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-lg);
+    box-shadow: 0 20px 50px -20px rgb(0 0 0 / 0.5);
+  }
+
+  /* Sheet grabber — the dialog is bottom-anchored on a phone. */
+  .modal-grab {
+    width: 2.125rem;
+    height: 0.25rem;
+    margin: -0.25rem auto 0.125rem;
+    border-radius: 999px;
+    background: var(--bq-line-2);
+  }
+
+  @media (min-width: 640px) {
+    .modal-grab {
+      display: none;
+    }
+  }
+
+  .modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  .modal-input {
+    min-height: 3rem;
+    padding-inline: 0.8125rem;
+    background: var(--bq-ground);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    color: var(--bq-ink);
+    font-size: 0.9375rem;
+  }
+
+  .modal-input::placeholder {
+    color: var(--bq-ink-3);
+  }
+
+  .modal-ta {
+    min-height: 8.25rem;
+    padding: 0.6875rem 0.8125rem;
+    background: var(--bq-ground);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    color: var(--bq-ink);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    resize: vertical;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 0.5625rem;
+  }
+
+  .modal-actions > .btn {
+    flex: 1;
+  }
+
+  /* --- Skill picker ----------------------------------------------------- */
+
+  .skillpick {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4375rem;
+  }
+
+  .skillopt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3125rem;
+    min-height: 3.5rem;
+    padding: 0.5rem 0.5625rem;
+    background: var(--bq-ground);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 0.15s,
+      background-color 0.15s;
+  }
+
+  .skillopt:hover {
+    border-color: var(--bq-line-2);
+  }
+
+  /* Keyboard focus lands on the visually-hidden radio inside. */
+  .skillopt:focus-within {
+    outline: 2px solid var(--bq-accent);
+    outline-offset: 2px;
+  }
+
+  .skillopt[data-selected="true"] {
+    border-color: var(--bq-accent);
+    background: var(--bq-accent-soft);
+  }
+
+  .skillopt > .nm {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--bq-ink);
+  }
+
+  /* The out-of-range band a legacy row can carry. Full width and tinted, so
+     it reads as "this is what they are now", not as a seventh option. */
+  .skillopt[data-legacy="true"] {
+    grid-column: 1 / -1;
+    background: var(--bq-warn-soft);
+    border-color: transparent;
+  }
+
+  .skillopt[data-legacy="true"][data-selected="true"] {
+    border-color: var(--bq-warn);
+  }
+
+  /* --- Banners ---------------------------------------------------------- */
+
+  .banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6875rem;
+    padding: 0.75rem 0.8125rem;
+    border: 1px solid transparent;
+    border-radius: var(--bq-radius);
+    font-size: 0.875rem;
+  }
+
+  .banner-warn {
+    background: var(--bq-warn-soft);
+    color: var(--bq-warn);
+  }
+
+  .banner-danger {
+    background: var(--bq-danger-soft);
+    color: var(--bq-danger);
+  }
+
+  /* --- Share header ----------------------------------------------------
+     The room code is the entire sharing loop and used to be 12px of grey. */
+
+  .share {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius);
+    box-shadow: var(--bq-shadow);
+  }
+
+  .share .code {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    line-height: 1;
+    color: var(--bq-ink);
+  }
+
+  /* --- Courts ----------------------------------------------------------
+     A swipe rail on a phone, because six courts do not fit in a vertical
+     stack but do fit in a swipe. Grid from tablet up. */
+
+  .courts-rail {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 78%;
+    gap: 0.75rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.375rem;
+    /* Bleed to the screen edges so a half-visible next card signals the
+       scroll; matches the room screen's 1rem side padding. */
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+  }
+
+  .courts-rail > * {
+    scroll-snap-align: start;
+  }
+
+  @media (min-width: 768px) {
+    .courts-rail {
+      grid-auto-flow: row;
+      grid-auto-columns: auto;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow: visible;
+      margin-inline: 0;
+      padding-inline: 0;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .courts-rail {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .court {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6875rem;
+    min-height: 12.5rem;
+    padding: 0.8125rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius);
+    box-shadow: var(--bq-shadow);
+  }
+
+  .court-no {
+    font-family: var(--font-display);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: var(--bq-heading-tracking);
+  }
+
+  /* "Side", not "Team": these four aren't teams, they're whoever the auto-pick
+     put on each half of one court. */
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1875rem;
+    padding: 0.5625rem 0.625rem;
+    border-radius: var(--bq-radius-sm);
+  }
+
+  .side-1 {
+    background: var(--bq-t1-soft);
+  }
+
+  .side-2 {
+    background: var(--bq-t2-soft);
+  }
+
+  .side-1 > .lbl {
+    color: var(--bq-t1);
+  }
+
+  .side-2 > .lbl {
+    color: var(--bq-t2);
+  }
+
+  .side .nm {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--bq-ink);
+  }
+
+  .vs {
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--bq-ink-3);
+  }
+
+  .court-empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    text-align: center;
+    background: var(--bq-sunken);
+    border: 1px dashed var(--bq-line-2);
+    border-radius: var(--bq-radius-sm);
+  }
+
+  /* --- Queue ------------------------------------------------------------ */
+
+  /* Up next is stated, not inferred. It used to be readable only from the
+     blue/red tinting of the first four queue rows. */
+  .upnext {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6875rem;
+    padding: 0.8125rem;
+    border-radius: var(--bq-radius);
+    background: var(--bq-accent-soft);
+    border: 1px solid var(--bq-line);
+    border-color: color-mix(in srgb, var(--bq-accent) 25%, transparent);
+  }
+
+  .upnext-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.5625rem;
+    align-items: center;
+  }
+
+  .qrow {
+    display: flex;
+    align-items: center;
+    gap: 0.6875rem;
+    min-height: 3.5rem;
+    padding: 0.5625rem 0.6875rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+  }
+
+  .qpos {
+    flex: 0 0 auto;
+    width: 1.25rem;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--bq-ink-3);
+  }
+
+  .qname {
+    display: flex;
+    align-items: center;
+    gap: 0.4375rem;
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  /* --- Players ---------------------------------------------------------- */
+
+  .plist {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5625rem;
+  }
+
+  @media (min-width: 768px) {
+    .plist {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .prow {
+    display: flex;
+    align-items: center;
+    gap: 0.6875rem;
+    min-height: 4rem;
+    padding: 0.625rem 0.6875rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+  }
+
+  .pname {
+    display: flex;
+    align-items: center;
+    gap: 0.4375rem;
+    flex-wrap: wrap;
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  /* --- Room layout ------------------------------------------------------ */
+
+  .room-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.875rem;
+  }
+
+  @media (min-width: 1024px) {
+    .room-body {
+      grid-template-columns: minmax(0, 21rem) minmax(0, 1fr);
+      gap: 1.25rem;
+      align-items: start;
+    }
+  }
+
+  /* The most-tapped control of the night, in the thumb zone. Phone only —
+     on a wider screen Start Game is already on screen. */
+  .actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 0.6875rem;
+    margin: 0.125rem -1rem -1rem;
+    padding: 0.6875rem 1rem 0.875rem;
+    border-top: 1px solid var(--bq-line);
+    background: var(--bq-ground);
+    background: color-mix(in srgb, var(--bq-ground) 92%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+
+  @media (min-width: 768px) {
+    .actionbar {
+      display: none;
+    }
+  }
+
+  /* --- My rooms --------------------------------------------------------- */
+
+  .roomrow {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 4rem;
+    padding: 0.75rem;
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-line);
+    border-radius: var(--bq-radius-sm);
+  }
+
+  .roomrow .rc {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--bq-accent);
+  }
+
+  /* --- Landing ---------------------------------------------------------- */
+
+  .hero {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 6vw, 2.75rem);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: var(--bq-heading-tracking);
+  }
+
+  .joinbox {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .joinbox .field {
+    min-height: 3.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .joinbox .field::placeholder {
+    letter-spacing: 0.14em;
+    text-transform: none;
+  }
+
+  .proof {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1875rem;
+    padding: 0.6875rem;
+    background: var(--bq-surface-2);
+    border-radius: var(--bq-radius-sm);
+  }
+
+  .proof b {
+    font-family: var(--font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: var(--bq-heading-tracking);
+  }
 }

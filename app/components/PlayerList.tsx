@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "../lib/cn";
 import { clampGamesPlayed, parseGamesPlayedInput } from "../lib/logic";
 import type { Player } from "../lib/types";
-import { Button, Card } from "./ui";
+import { ListIcon, MoreIcon, PencilIcon, TrashIcon } from "./icons";
+import { SkillBadge } from "./SkillBadge";
+import { Button, IconButton } from "./ui";
 
 // Per-player games counter. Typeable and stepper-driven: the − stepper clamps at
 // 0, and the text field keeps what you type (digits only) without snapping to 0
@@ -35,12 +38,11 @@ function GamesCounter({
   };
 
   return (
-    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50 h-7">
+    <div className="stepper">
       <button
         type="button"
-        aria-label={`Decrease games for ${playerName}`}
-        disabled={disabled}
-        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-r border-gray-200 font-medium disabled:opacity-40"
+        aria-label={`One fewer game for ${playerName}`}
+        disabled={disabled || value <= 0}
         onClick={() => step(-1)}
       >
         −
@@ -52,7 +54,7 @@ function GamesCounter({
         pattern="[0-9]*"
         aria-label={`Games played by ${playerName}`}
         disabled={disabled}
-        className="w-8 h-full text-center text-xs font-semibold bg-transparent focus:outline-none disabled:opacity-60"
+        className="v num"
         value={draft ?? String(value)}
         onChange={(e) => {
           const v = e.target.value;
@@ -66,14 +68,78 @@ function GamesCounter({
 
       <button
         type="button"
-        aria-label={`Increase games for ${playerName}`}
+        aria-label={`One more game for ${playerName}`}
         disabled={disabled}
-        className="px-2 h-full hover:bg-gray-200 text-gray-600 transition-colors border-l border-gray-200 font-medium disabled:opacity-40"
         onClick={() => step(1)}
       >
         +
       </button>
     </div>
+  );
+}
+
+// A click-outside backdrop plus a positioned panel — the pattern the players
+// menu already used, extracted so per-row menus behave the same way.
+function Menu({
+  label,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <IconButton
+        aria-label={label}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => onToggle(!open)}
+      >
+        <MoreIcon />
+      </IconButton>
+
+      {open && (
+        <>
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-10"
+            onClick={() => onToggle(false)}
+          />
+          <div className="card absolute right-0 z-20 mt-2 flex w-52 flex-col overflow-hidden py-1 shadow-lg">
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  onClick,
+  danger = false,
+  children,
+}: {
+  onClick: () => void;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-h-11 items-center gap-2.5 px-3.5 text-left text-sm",
+        danger
+          ? "text-danger hover:bg-danger-soft"
+          : "text-ink hover:bg-surface-2",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -101,149 +167,122 @@ export function PlayerList({
   onEditPlayer: (player: Player) => void;
   onUpdateGamesPlayed: (playerId: string, value: number) => void;
 }) {
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [panelMenu, setPanelMenu] = useState(false);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   return (
-    <Card className="md:col-span-2 p-4">
-      <div className="flex justify-between mb-3">
-        <h2 className="font-semibold">Players</h2>
-        <div className={readOnly ? "hidden" : "flex space-x-2"}>
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="heading text-xl">
+          Players{" "}
+          <span className="num text-sm font-normal text-ink-3">
+            · {availablePlayers.length} free
+          </span>
+        </h2>
+
+        <div className={cn("flex gap-2", readOnly && "hidden")}>
           <Button
-            className="bg-green-600"
+            variant="ghost"
+            size="sm"
             onClick={onAutoPick}
             disabled={availablePlayers.length < 4}
           >
-            Auto-Pick (4)
+            Auto-pick 4
           </Button>
-          <Button onClick={onAdd}>Add</Button>
-          {/* DROPDOWN MENU */}
-          <div className="relative">
-            <button
-              type="button"
-              aria-label="Player actions"
-              aria-haspopup="true"
-              aria-expanded={showDropdown}
-              onClick={() => setShowDropdown(!showDropdown)}
-              className="bg-black text-white p-2 rounded-lg hover:opacity-80 flex items-center justify-center transition-colors"
+          <Button size="sm" onClick={onAdd}>
+            Add
+          </Button>
+
+          <Menu
+            label="More player actions"
+            open={panelMenu}
+            onToggle={setPanelMenu}
+          >
+            <MenuItem
+              onClick={() => {
+                onBatchAdd();
+                setPanelMenu(false);
+              }}
             >
-              <svg
-                aria-hidden="true"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`transition-transform duration-200 ${
-                  showDropdown ? "rotate-180" : ""
-                }`}
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-
-            {showDropdown && (
-              <>
-                {/* Invisible backdrop to close dropdown when clicking outside */}
-                <div
-                  aria-hidden="true"
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowDropdown(false)}
-                />
-
-                <Card className="absolute right-0 mt-2 w-48 shadow-xl z-20 overflow-hidden border-gray-200">
-                  <div className="flex flex-col py-1">
-                    <button
-                      type="button"
-                      className="px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                      onClick={() => {
-                        onBatchAdd();
-                        setShowDropdown(false);
-                      }}
-                    >
-                      <span aria-hidden="true" className="text-blue-600">
-                        📝
-                      </span>{" "}
-                      Batch Add Players
-                    </button>
-
-                    <div className="border-t border-gray-100 my-1" />
-
-                    <button
-                      type="button"
-                      className="px-4 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
-                      onClick={() => {
-                        onDeleteAll();
-                        setShowDropdown(false);
-                      }}
-                    >
-                      <span aria-hidden="true">🗑️</span> Delete All Players
-                    </button>
-                  </div>
-                </Card>
-              </>
-            )}
-          </div>
+              <ListIcon size={16} />
+              Add several at once
+            </MenuItem>
+            <MenuItem
+              danger
+              onClick={() => {
+                onDeleteAll();
+                setPanelMenu(false);
+              }}
+            >
+              <TrashIcon size={16} />
+              Remove everyone
+            </MenuItem>
+          </Menu>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {availablePlayers.map((p) => (
-          <Card key={p.id} className="p-3 flex justify-between items-center">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span>
-                  {p.name} ({p.skill})
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Edit ${p.name}`}
-                  className={
-                    readOnly
-                      ? "hidden"
-                      : "text-gray-500 hover:text-gray-900 transition-colors"
-                  }
-                  onClick={() => onEditPlayer(p)}
+      {availablePlayers.length === 0 ? (
+        <p className="muted">
+          Everyone is queued or on court. Add more players to keep the rotation
+          going.
+        </p>
+      ) : (
+        <div className="plist">
+          {availablePlayers.map((p) => (
+            <div key={p.id} className="prow">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="pname">
+                  {p.name}
+                  <SkillBadge skill={p.skill} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <GamesCounter
+                    value={p.gamesPlayed}
+                    playerName={p.name}
+                    disabled={readOnly}
+                    onChange={(value) => onUpdateGamesPlayed(p.id, value)}
+                  />
+                  <span className="lbl">Games</span>
+                </div>
+              </div>
+
+              {/* Queue is the big tap; Edit and Delete moved behind the overflow
+                  so a destructive action no longer sits a thumb-width from the
+                  one you press forty times a night. */}
+              <div className={cn("flex items-center gap-2", readOnly && "hidden")}>
+                <Button size="sm" onClick={() => onQueue(p)}>
+                  Queue
+                </Button>
+                <Menu
+                  label={`More actions for ${p.name}`}
+                  open={openRow === p.id}
+                  onToggle={(open) => setOpenRow(open ? p.id : null)}
                 >
-                  <svg
-                    aria-hidden="true"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <MenuItem
+                    onClick={() => {
+                      onEditPlayer(p);
+                      setOpenRow(null);
+                    }}
                   >
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex items-center mt-2">
-                <GamesCounter
-                  value={p.gamesPlayed}
-                  playerName={p.name}
-                  disabled={readOnly}
-                  onChange={(value) => onUpdateGamesPlayed(p.id, value)}
-                />
-                <span className="ml-2 text-[10px] uppercase font-bold text-gray-500 tracking-tight">
-                  Games
-                </span>
+                    <PencilIcon size={16} />
+                    Edit name or level
+                  </MenuItem>
+                  <MenuItem
+                    danger
+                    onClick={() => {
+                      onDeletePlayer(p);
+                      setOpenRow(null);
+                    }}
+                  >
+                    <TrashIcon size={16} />
+                    Remove {p.name}
+                  </MenuItem>
+                </Menu>
               </div>
             </div>
-            <div className={readOnly ? "hidden" : "flex space-x-2"}>
-              <Button onClick={() => onQueue(p)}>Queue</Button>
-              <Button className="bg-red-600" onClick={() => onDeletePlayer(p)}>
-                Delete
-              </Button>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </Card>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
