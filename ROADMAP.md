@@ -405,6 +405,11 @@ shipping a paid feature free, then taking it away), a manual theme toggle (the `
 ship dormant so it's purely additive later), and the QR code / per-court timers the mockup's footer
 already marks out of scope.
 
+**Follow-up (2026-09-11):** the loading placeholders this phase tokenised were measured *invisible*
+— `bg-surface-2` against the ground is 1.21:1 in dark and 1.05:1 in light, and `animate-pulse` moves
+opacity only. Fixed with a `.skel` component class, and the dormant reduced-motion block turned out
+to have real teeth; see the changelog entry of the same date.
+
 **Effort:** ~1 weekend.
 
 ---
@@ -588,6 +593,16 @@ Track choices here so the "why" isn't lost.
   a mistyped games count. Scope is the **Players panel only** — queued and on-court players aren't
   listed there, so they stay uneditable until their game ends. Revisit if that bites in practice.
   _(2026-08-08)_
+- [x] **A loading placeholder must be legible with no motion at all.** `globals.css` applies
+  `animation-duration: 0.01ms !important` to everything under `prefers-reduced-motion`, and a
+  component class can't outrank it. Worse, that doesn't *stop* an infinite animation — it samples it
+  at an arbitrary point every frame, which flickers. So a skeleton's **colour** has to carry the
+  meaning on its own, and any animation is decoration layered on top, removable with `display: none`
+  (a property that block doesn't touch). Hence `.skel` is a static fill plus a sweep on `::after`,
+  never an animated background, and any future animation in this codebase inherits the same
+  constraint. `--bq-skel` / `--bq-skel-hi` also stay out of `@theme` deliberately: a `bg-skel`
+  utility would let someone paint a static box that looks like a loading bar without being one.
+  _(2026-09-11)_
 - [x] **Migrations on deploy** — auto-applied on Vercel **production** builds via a gated step
   (`supabase db push`); preview/local builds skip so they never touch prod. _(2026-07-04)_
 - [ ] **One-time vs subscription** — revisit after launch, once you see real usage costs (and the Supabase Pro $25/mo threshold).
@@ -596,6 +611,33 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-09-11** — **Loading states that actually read as loading.** The `/rooms` placeholder
+  rendered as two blank rounded rectangles. It used `bg-surface-2` — the *recessed* tone — with no
+  border, plus Tailwind's `animate-pulse`, which animates opacity only. Measured, the bar sat at
+  **1.21:1** against the dark ground and **1.05:1** against the light one: an empty box in *both*
+  themes, not just dark. Replaced by a `.skel` class carrying a static fill plus a travelling sheen
+  on `::after`. **That split is forced, not stylistic** — the global `prefers-reduced-motion` block
+  sets `animation-duration: 0.01ms !important`, which a component class cannot outrank, and which
+  does not *stop* an infinite animation but samples it at an arbitrary point every frame. So the
+  fill has to carry the state alone, and the sheen is removed with `display: none`, a property that
+  block doesn't touch. The `/rooms` placeholder **reuses `.roomrow` itself**, so surface, border and
+  the 4rem height can't drift from the real row and nothing shifts when the rows land; bars are
+  sized to the content they wait on (an 8-char share code is 88px, not 72px). **Also fixed a real
+  bug this exposed:** on a failed fetch `rooms` stayed `null` forever, so the error banner and an
+  animating skeleton sat on screen together indefinitely — the skeleton is now gated on there being
+  no error, and the banner gained a **Try again**, where the only way out had been a page reload.
+  Same treatment on `RoomClient`, and on `AccountBar`'s reserved strip — the other blank patch while
+  auth resolved. No migration, no `sessionStore`, no hooks, no `@theme` change. **Verified** beyond
+  `eslint` / 35 pure tests / `next build`: against the *built* CSS, `--bq-skel` appears 3× (light
+  plus **both** dark blocks — the duplication trap the file warns about) and `bq-skel-sweep` 2×,
+  confirming `@keyframes` survives inside `@layer components`. Not verified: how it looks — there
+  are no component tests and the environment is `node`. **Deliberately not done:** shortening the
+  wait itself (`useAuth` resolves `getUser()`, then `listMyRooms` runs its *own* before the select,
+  and `AccountBar` a third — three auth round-trips, two of them in series ahead of the query; safe
+  to collapse, since `sessions_select` is `using (true)` and the `.eq("owner_id", …)` filter is not
+  the security boundary, but it touches both containment modules and is its own change), a
+  `Skeleton` primitive in `ui.tsx`, and a delay before showing the skeleton to avoid a flash on fast
+  loads.
 - **2026-09-11** — **Phase 2.6 (inserted): the UI redesign.** Design tokens in `globals.css`
   replace 39 hardcoded colour utilities across 11 files, ending the collisions where red meant Team
   2 *and* destructive *and* error; dark mode exists for the first time, following the OS; every
