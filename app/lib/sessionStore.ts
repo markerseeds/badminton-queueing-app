@@ -22,6 +22,7 @@ import type {
 type SessionRow = {
   id: string;
   share_code: string;
+  name: string | null;
   courts: number;
   owner_id: string | null;
   locked: boolean;
@@ -116,6 +117,7 @@ function assembleSession(
   return {
     id: session.id,
     shareCode: session.share_code,
+    name: session.name,
     courts: session.courts,
     ownerId: session.owner_id,
     locked: session.locked,
@@ -170,7 +172,7 @@ export async function getSessionByCode(
 ): Promise<LoadedSession | null> {
   const { data: session, error } = await supabase
     .from("sessions")
-    .select("id, share_code, courts, owner_id, locked")
+    .select("id, share_code, name, courts, owner_id, locked")
     .eq("share_code", code)
     .maybeSingle();
   if (error) throw error;
@@ -240,7 +242,7 @@ export async function listMyRooms(): Promise<RoomSummary[]> {
 
   const { data, error } = await supabase
     .from("sessions")
-    .select("id, share_code, courts, locked, created_at")
+    .select("id, share_code, name, courts, locked, created_at")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -248,6 +250,7 @@ export async function listMyRooms(): Promise<RoomSummary[]> {
   return (data ?? []).map((r) => ({
     id: r.id,
     shareCode: r.share_code,
+    name: r.name,
     courts: r.courts,
     locked: r.locked,
     createdAt: r.created_at,
@@ -265,6 +268,24 @@ export async function setRoomLock(
       p_session_id: sessionId,
       p_locked: locked,
     }),
+  );
+}
+
+// `name` is ungranted at the column level too, so this RPC is likewise the only
+// way to write it — but unlike the lock it is open to anyone who may edit the
+// room, not just its owner: a name is content, like the court count and player
+// names, not a security control.
+//
+// Pass null to clear the name. A bare `run()` is enough here, without
+// `updatePlayer`'s `.select("id")`-and-throw idiom: that exists because a
+// lock-blocked PostgREST UPDATE matches no rows *without* erroring, whereas
+// this RPC raises.
+export async function setRoomName(
+  sessionId: string,
+  name: string | null,
+): Promise<void> {
+  await run(
+    supabase.rpc("set_room_name", { p_session_id: sessionId, p_name: name }),
   );
 }
 

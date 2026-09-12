@@ -1148,13 +1148,6 @@
     border-radius: var(--bq-radius-sm);
   }
 
-  .roomrow .rc {
-    font-family: var(--font-mono);
-    font-size: 1rem;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    color: var(--bq-accent);
-  }
 
   /* --- Landing ---------------------------------------------------------- */
 

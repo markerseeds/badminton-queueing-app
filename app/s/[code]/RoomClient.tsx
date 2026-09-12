@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AddPlayerModal } from "../../components/AddPlayerModal";
 import { BatchAddModal } from "../../components/BatchAddModal";
 import { ConfirmationModal } from "../../components/ConfirmationModal";
@@ -12,14 +12,17 @@ import {
   CloseIcon,
   CopyIcon,
   LockIcon,
+  PencilIcon,
   UnlockIcon,
   WarningIcon,
 } from "../../components/icons";
 import { PlayerList } from "../../components/PlayerList";
 import { QueuePanel } from "../../components/QueuePanel";
+import { RenameRoomModal } from "../../components/RenameRoomModal";
 import { Button, IconButton } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
 import { useSession } from "../../hooks/useSession";
+import { cn } from "../../lib/cn";
 import { getAvailablePlayers } from "../../lib/logic";
 import type { Player } from "../../lib/types";
 
@@ -39,7 +42,28 @@ export function RoomClient({ code }: { code: string }) {
     null,
   );
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Above the early returns below, or it's a rules-of-hooks violation.
+  //
+  // Set in an effect rather than through `generateMetadata` in page.tsx: that
+  // would need a server-side Supabase read, and `lib/supabase.ts` is the browser
+  // client — adding a server client to title a tab would breach the one-module
+  // containment rule for something cosmetic. It would also go stale on rename.
+  //
+  // No cleanup restoring a previous title: the effect re-runs on rename, so a
+  // captured "previous" would be the *room's* own title from the second run
+  // onward and unmounting would pin it. The App Router emits the destination
+  // route's title on navigation, so there is nothing to undo.
+  useEffect(() => {
+    if (!state) return;
+    // Falls back to the code so two unnamed rooms stay distinguishable — the
+    // tab strip is a wayfinding surface, which is the point of doing this.
+    document.title = state.name
+      ? `${state.name} · Badminton Queue`
+      : `Room ${state.shareCode} · Badminton Queue`;
+  }, [state]);
 
   if (status === "loading") {
     return (
@@ -50,12 +74,19 @@ export function RoomClient({ code }: { code: string }) {
         <p className="muted">Loading room…</p>
         {/* Shaped like what it replaces — the share strip, then the court
             board. Bars on `.card`, so the placeholder sits on the real surface
-            instead of the recessed one it used to vanish into. */}
+            instead of the recessed one it used to vanish into. The strip now
+            stacks three bars: the room name (text-lg), the "Room code" label,
+            and the code itself. An approximation by construction — `.share`
+            wraps, so the real header is taller again once the button cluster
+            drops to its own line on a phone. */}
         <div aria-hidden="true" className="flex flex-col gap-4">
-          <div className="card flex h-20 items-center gap-3 p-4">
-            <div className="skel h-3 w-16" />
-            <div className="skel h-5 w-28" />
-            <div className="skel ml-auto size-11 shrink-0 rounded-(--bq-radius-sm)" />
+          <div className="card flex h-28 items-center gap-3 p-4">
+            <div className="flex flex-1 flex-col gap-2">
+              <div className="skel h-5 w-40" />
+              <div className="skel h-3 w-16" />
+              <div className="skel h-5 w-28" />
+            </div>
+            <div className="skel size-11 shrink-0 rounded-(--bq-radius-sm)" />
           </div>
           <div className="card flex h-52 flex-col gap-3 p-4">
             <div className="skel h-3 w-16" />
@@ -157,10 +188,37 @@ export function RoomClient({ code }: { code: string }) {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 md:p-6">
-      {/* SHARE HEADER — the room code is how anyone else gets in. */}
+      {/* SHARE HEADER — the name is the room's identity, the code is how
+          anyone else gets in. The name goes first, and gives the page its first
+          real <h1>; it had none before. */}
       <header className="share">
         <div className="min-w-0 flex-1">
-          <div className="lbl">Room code</div>
+          <div className="flex min-w-0 items-center gap-1">
+            <h1
+              className={cn(
+                "heading truncate text-lg",
+                !state.name && "font-normal text-ink-3",
+              )}
+            >
+              {state.name ?? "Untitled room"}
+            </h1>
+            {/* Gated on readOnly, NOT isOwner: renaming is an edit, and every
+                edit here is open to whoever holds the code. Keeps the full 44px
+                target and absorbs the bulk with -my-2 — margins don't clip the
+                hit area. The size-8 shrink on the error banner's dismiss below
+                is not a precedent for this; that's a dismiss, this is the
+                affordance that makes the whole feature discoverable. */}
+            {!readOnly && (
+              <IconButton
+                aria-label={state.name ? `Rename ${state.name}` : "Name this room"}
+                className="-my-2 shrink-0 border-0 bg-transparent"
+                onClick={() => setRenaming(true)}
+              >
+                <PencilIcon size={16} />
+              </IconButton>
+            )}
+          </div>
+          <div className="lbl mt-1">Room code</div>
           <div className="code num">{state.shareCode}</div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -262,6 +320,18 @@ export function RoomClient({ code }: { code: string }) {
             setShowModal(false);
           }}
           onCancel={() => setShowModal(false)}
+        />
+      )}
+
+      {renaming && (
+        <RenameRoomModal
+          name={state.name}
+          shareCode={state.shareCode}
+          onSubmit={(raw) => {
+            actions.renameRoom(raw);
+            setRenaming(false);
+          }}
+          onCancel={() => setRenaming(false)}
         />
       )}
 

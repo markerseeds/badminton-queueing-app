@@ -71,6 +71,10 @@ export type AccountLimits = SessionLimits & {
 export type LoadedSession = SessionState & {
   id: string;
   shareCode: string;
+  // Optional label on top of the share code, which stays the room's address.
+  // Null means unnamed — there is no second spelling of that, so every surface
+  // can branch on null alone to render its placeholder.
+  name: string | null;
   // Null for rooms created before accounts existed, and for rooms whose owner
   // deleted their account. Such rooms stay open to anyone with the code.
   ownerId: string | null;
@@ -82,6 +86,7 @@ export type LoadedSession = SessionState & {
 export type RoomSummary = {
   id: string;
   shareCode: string;
+  name: string | null;
   courts: number;
   locked: boolean;
   createdAt: string;

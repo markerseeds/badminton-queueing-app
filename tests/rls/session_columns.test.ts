@@ -92,6 +92,32 @@ describe("sessions column privileges", () => {
     expect((await getSession(svc, sessionId)).locked).toBe(false);
   });
 
+  // The companion to tests/rpc/set_room_name.test.ts: that file proves the RPC
+  // works, this one proves it is necessary. If `name` were ever added to the
+  // column grant, renaming would start going through `sessions_update` — whose
+  // with-check carries the plan court cap, and so refuses every update to a
+  // grandfathered room, rename included.
+  it("refuses to let anyone write name directly", async () => {
+    const owner = await authedClient(svc);
+    ownerId = owner.userId;
+    sessionId = await createTestSession(svc, 2, { ownerId: owner.userId });
+
+    // Even the owner must go through set_room_name — the column is ungranted.
+    const { error: ownerError } = await owner.client
+      .from("sessions")
+      .update({ name: "Mine" })
+      .eq("id", sessionId);
+    expect(ownerError).not.toBeNull();
+
+    const { error: anonError } = await anon
+      .from("sessions")
+      .update({ name: "Theirs" })
+      .eq("id", sessionId);
+    expect(anonError).not.toBeNull();
+
+    expect((await getSession(svc, sessionId)).name).toBeNull();
+  });
+
   it("lets a signed-in user create a room they own", async () => {
     const owner = await authedClient(svc);
     ownerId = owner.userId;

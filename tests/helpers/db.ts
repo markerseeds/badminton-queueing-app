@@ -187,9 +187,11 @@ export async function getSession(svc: SupabaseClient, sessionId: string) {
   return data as {
     id: string;
     share_code: string;
+    name: string | null;
     courts: number;
     owner_id: string | null;
     locked: boolean;
+    updated_at: string;
   };
 }
 

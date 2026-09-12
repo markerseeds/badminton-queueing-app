@@ -5,6 +5,7 @@ import {
   clampGamesPlayed,
   getAvailablePlayers,
   normalizePlayerName,
+  normalizeRoomName,
   normalizeSkill,
   pickFourPlayers,
 } from "../lib/logic";
@@ -136,6 +137,20 @@ export function useSession(code: string) {
     // usual error banner.
     setLocked: (locked: boolean) =>
       act((s) => store.setRoomLock(s.id, locked)),
+
+    // Open to anyone who may edit, not just the owner — the same gate as courts
+    // and player names. Re-normalized rather than trusting the form, as
+    // updatePlayer is; unlike there, null is a real value (clear the name)
+    // rather than a reason to skip the write.
+    renameRoom: (raw: string) =>
+      act(async (s) => {
+        const name = normalizeRoomName(raw);
+        // Cheap early-out, including null === null. Sound only because
+        // normalizeRoomName is idempotent — the stored value has already been
+        // through it, so re-normalizing it must not move it again.
+        if (name === s.name) return;
+        await store.setRoomName(s.id, name);
+      }),
   };
 
   return {

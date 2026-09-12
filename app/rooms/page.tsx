@@ -8,6 +8,7 @@ import { LockIcon, MoreIcon, TrashIcon, WarningIcon } from "../components/icons"
 import { LimitNote } from "../components/LimitNote";
 import { Button, IconButton } from "../components/ui";
 import { useAuth } from "../hooks/useAuth";
+import { cn } from "../lib/cn";
 import { deleteRoom, getMyLimits, listMyRooms } from "../lib/sessionStore";
 import type { AccountLimits, RoomSummary } from "../lib/types";
 
@@ -22,9 +23,9 @@ function formatDate(iso: string): string {
 // Stands in for the room list, and reuses `.roomrow` itself — so the
 // placeholder can't drift from the real row's surface, border or 4rem height,
 // and nothing below it shifts when the rows arrive. The bars are sized to the
-// content they're waiting on: an 8-char share code at 1rem mono/0.08em is
-// ~88px, the "3 courts · 11 Sep 2026" line ~120px, and the trailing square is
-// the 44px IconButton.
+// content they're waiting on: a room name of ~18 characters at 0.9375rem is
+// ~144px, the "DW5WDMZE · 3 courts · 11 Sep 2026" detail line at 0.6875rem is
+// ~176px, and the trailing square is the 44px IconButton.
 function RoomsSkeleton() {
   return (
     <div role="status" className="flex flex-col gap-2">
@@ -33,8 +34,8 @@ function RoomsSkeleton() {
         {[0, 1].map((i) => (
           <li key={i} className="roomrow">
             <div className="min-w-0 flex-1">
-              <div className="skel h-4 w-22" />
-              <div className="skel mt-2 h-3 w-30" />
+              <div className="skel h-4 w-36" />
+              <div className="skel mt-2 h-3 w-44" />
             </div>
             <div className="skel size-11 shrink-0 rounded-(--bq-radius-sm)" />
           </li>
@@ -191,12 +192,31 @@ export default function MyRoomsPage() {
           <ul className="flex flex-col gap-2">
             {rooms.map((room) => (
               <li key={room.id} className="roomrow">
+                {/* The name is the primary line; the code drops to the detail
+                    line beside courts and date. Until a room is named this does
+                    demote the only thing identifying it — the cost of a
+                    consistent treatment that makes naming discoverable, and the
+                    code is still on the row. */}
                 <div className="min-w-0 flex-1">
-                  <Link href={`/s/${room.shareCode}`} className="rc num">
-                    {room.shareCode}
+                  <Link
+                    href={`/s/${room.shareCode}`}
+                    // Without this, two unnamed rooms are the same link to a
+                    // screen reader.
+                    aria-label={room.name ?? `Untitled room ${room.shareCode}`}
+                    className={cn(
+                      "block truncate text-[0.9375rem] font-semibold text-accent",
+                      !room.name && "font-normal text-ink-3",
+                    )}
+                  >
+                    {room.name ?? "Untitled room"}
                   </Link>
                   <p className="tiny num mt-0.5">
-                    {room.courts} court{room.courts === 1 ? "" : "s"} ·{" "}
+                    {/* Still mono, as codes are everywhere else — it's demoted,
+                        not decorative, and it's what you read aloud. */}
+                    <span className="font-mono tracking-[0.06em]">
+                      {room.shareCode}
+                    </span>{" "}
+                    · {room.courts} court{room.courts === 1 ? "" : "s"} ·{" "}
                     {formatDate(room.createdAt)}
                   </p>
                 </div>
@@ -210,7 +230,7 @@ export default function MyRoomsPage() {
 
                 <div className="relative">
                   <IconButton
-                    aria-label={`Actions for room ${room.shareCode}`}
+                    aria-label={`Actions for ${room.name ?? `room ${room.shareCode}`}`}
                     aria-haspopup="true"
                     aria-expanded={openMenu === room.id}
                     onClick={() =>
@@ -258,8 +278,15 @@ export default function MyRoomsPage() {
 
       {pendingDelete && (
         <ConfirmationModal
-          message={`Room ${pendingDelete.shareCode} and every player and court in it will be removed. Anyone holding the link will find nothing there. You can't undo this.`}
-          confirmLabel={`Delete ${pendingDelete.shareCode}`}
+          // Names the room the way the owner knows it, but keeps the code in
+          // view: it's the one identifier that can't be ambiguous, which is
+          // what a destructive confirmation needs.
+          message={`${
+            pendingDelete.name
+              ? `${pendingDelete.name} (${pendingDelete.shareCode})`
+              : `Room ${pendingDelete.shareCode}`
+          } and every player and court in it will be removed. Anyone holding the link will find nothing there. You can't undo this.`}
+          confirmLabel={`Delete ${pendingDelete.name ?? pendingDelete.shareCode}`}
           onConfirm={confirmDelete}
           onCancel={() => setPendingDelete(null)}
         />

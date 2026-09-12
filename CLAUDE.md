@@ -49,7 +49,14 @@ regenerated after any port change.
 
 If DB tests fail *en masse* with 20s timeouts rather than assertion errors, suspect resource
 contention rather than your change: vitest runs files in parallel, and a machine hosting a second
-Supabase stack can't keep up. `npx vitest run <one file>` per file is the reliable signal.
+Supabase stack — or a `npm run dev` pointed at the local one — can't keep up. Check the failure
+*kind* first; timeouts with zero assertion errors is the tell. Then:
+
+```bash
+npx vitest run --no-file-parallelism   # whole suite, serialized — the reliable signal
+```
+
+That's usually enough. `npx vitest run <one file>` narrows further if it isn't.
 
 ## Architecture
 
@@ -82,9 +89,12 @@ organizers acting at once serialize instead of clobbering each other (two device
 must fill different courts, not double-book one).
 
 These are `SECURITY INVOKER` **on purpose**: the function runs as the caller, so table RLS still
-applies and ownership rules are inherited for free. The one exception is `set_room_lock`, which is
-`SECURITY DEFINER` because it must write a column no caller may write directly — so it re-checks
-ownership in its own body.
+applies and ownership rules are inherited for free. Two exceptions are `SECURITY DEFINER`, both
+because they write a column no caller may write directly, so each re-checks its own rule in its body:
+`set_room_lock` re-checks **ownership**, while `set_room_name` re-checks **editability**
+(`session_is_editable`) — a name is content, open to anyone holding the code, where the lock is a
+security control. `set_room_name` has a second, independent reason to bypass RLS; see the plan-limits
+section below.
 
 Single-row writes (add player, set games played, remove from queue, end game) go through PostgREST
 directly and don't need an RPC.
@@ -106,8 +116,9 @@ to the `actions` object in `useSession` and wrapped in `act` — don't hand-roll
   deleted their account would otherwise be editable by nobody. Every predicate carries an
   `owner_id is null` arm. Keep it.
 - **Column grants, not policies, protect ownership.** `anon`/`authenticated` hold `UPDATE (courts,
-  updated_at)` on `sessions` and nothing else, so `owner_id`, `share_code`, and `locked` cannot be
-  written through PostgREST at all. That's what lets `set_courts` stay open to non-owners safely.
+  updated_at)` on `sessions` and nothing else, so `owner_id`, `share_code`, `locked` and `name`
+  cannot be written through PostgREST at all. That's what lets `set_courts` stay open to non-owners
+  safely.
   `players` is grant-restricted the same way: `UPDATE` covers name, skill, games_played, status,
   queue_position, court_no and court_slot, so `session_id` can't be rewritten to walk a player into
   another room past its player cap.
@@ -140,6 +151,16 @@ server's. Retuning a limit should be a one-line migration and nothing else.
   whole batch lands. Only a statement-level AFTER trigger sees the real total. It takes the same
   `pg_advisory_xact_lock` the RPCs take.
 - **Rooms → the `sessions_insert` `with check`**, counting through `owned_room_count()`.
+
+**The court cap's blast radius reaches every other column.** A `with check` is evaluated against the
+NEW row on *every* UPDATE, not only ones touching the column it names — so on a **grandfathered** room
+(above its owner's cap, which it deliberately keeps) an update that changes something else entirely is
+refused 42501 too. RLS can't reference `OLD`, so the clause can't be made conditional on `courts`
+actually changing, and a second permissive policy carving out the other column would be a hole:
+permissive policies are OR'd and can't be column-scoped, so a court raise would pass through it. This
+is why `set_room_name` is a `SECURITY DEFINER` RPC rather than a widened column grant, and why **any
+future writable column on `sessions` needs the same treatment.** Characterized by "refuses an
+unrelated update to a room already above the cap" in `tests/rls/plan_limits.test.ts`.
 
 **Two asymmetries that will bite you.** RLS policies exempt `service_role` automatically; a trigger
 does not, so `enforce_player_limit` checks `current_user` itself — without that, every test helper

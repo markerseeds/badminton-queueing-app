@@ -262,6 +262,31 @@ describe("court cap", () => {
     expect((await getSession(svc, sessionId)).courts).toBe(2);
   });
 
+  // The consequence of putting the cap in a `with check`, characterized so it
+  // can't be rediscovered the hard way. A with-check is evaluated against the
+  // NEW row on EVERY update, not only ones touching the column it names — so on
+  // a room already above its cap, an update that changes something else
+  // entirely is refused too. RLS cannot reference OLD, so there is no way to
+  // make the clause conditional on `courts` actually changing.
+  //
+  // This is why `set_room_name` is a SECURITY DEFINER RPC rather than a widened
+  // column grant (see 20260912120000_room_names.sql). Anyone retuning these
+  // limits opens this file — which is the person who needs to know that.
+  it("refuses an unrelated update to a room already above the cap", async () => {
+    const owner = await newOwner();
+    const sessionId = await seedRoom(owner.userId, 5);
+
+    // `updated_at` is granted and carries no cap of its own; this write fails
+    // purely because the row's untouched `courts` is above the owner's ceiling.
+    const { error } = await anon
+      .from("sessions")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", sessionId);
+
+    expect(error).not.toBeNull();
+    expect(error!.code).toBe("42501");
+  });
+
   // Why tests/rpc/set_courts.test.ts keeps passing untouched: its rooms are
   // ownerless, and ownerless resolves to pro.
   it("leaves an ownerless room's court count uncapped", async () => {

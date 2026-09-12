@@ -104,6 +104,39 @@ export function normalizePlayerName(raw: string): string {
   return raw.trim();
 }
 
+// Matches the `char_length(name) between 1 and 60` arm of `sessions_name_check`.
+// A room name is a headline, not a description.
+export const MAX_ROOM_NAME = 60;
+
+// Normalize a room name typed into the rename dialog. The mirror image of
+// `normalizePlayerName`: a player must be called something, so there an empty
+// result means "don't write", while a room need not be, so here it means
+// "clear the name" and resolves to null. That keeps "no name" to one
+// representation, so no rendering surface has to tell null from "".
+//
+// Three things about the order, each load-bearing:
+//
+//  1. Runs of whitespace collapse rather than merely trimming, because the value
+//     lands in `document.title` and in single-line `truncate` elements. The
+//     input is single-line so a newline can't be typed — but it can be pasted.
+//     Control characters join the class (`\p{Cc}`): JS `\s` covers \t\n\v\f\r
+//     and misses the rest, and a NUL reaches Postgres as an encoding error
+//     (22021) rather than an honest constraint violation.
+//  2. Truncation is by **code point**, not `.slice()`. Slicing counts UTF-16
+//     units, so a name one emoji over the cap loses half a surrogate pair and
+//     the lone surrogate is again a raw 22021 in the user's error banner.
+//  3. The final trim catches a cut that lands in the gap between two words,
+//     which would otherwise leave a trailing space for `sessions_name_check`'s
+//     `btrim(name) = name` arm to reject.
+//
+// Normalizing twice must equal normalizing once: `useSession` compares a fresh
+// candidate against the stored value to skip a no-op write, and an unstable
+// normalizer would make every save a write.
+export function normalizeRoomName(raw: string): string | null {
+  const collapsed = raw.replace(/[\s\p{Cc}]+/gu, " ").trim();
+  return [...collapsed].slice(0, MAX_ROOM_NAME).join("").trim() || null;
+}
+
 // Normalize a skill typed or picked in the edit form, the same way
 // `parseBatchInput` does for imported rows: lowercase it if it's one we know.
 // An unrecognized value is returned as-is rather than coerced to SKILLS[0] —

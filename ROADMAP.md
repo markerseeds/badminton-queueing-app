@@ -36,9 +36,10 @@ missing is a way to pay.)_
 
 **What it does:** One live "room" where an organizer adds players (with a skill level), sets the
 court count, builds a queue, and auto-picks fair, skill-matched groups of 4. It tracks games played,
-supports batch-add, shuffle-teams, delete-all, and syncs in real time across devices. Since
-2026-09-12 the court and player counts are **capped by the room owner's plan** (free: 2 courts, 10
-players; Pro: 6 courts, unlimited players), enforced server-side.
+supports batch-add, shuffle-teams, delete-all, and syncs in real time across devices. Rooms can be
+**named** (2026-09-12), so a regular organizer can tell Tuesday's club from Saturday's juniors
+without decoding a share code. Since 2026-09-12 the court and player counts are **capped by the room
+owner's plan** (free: 2 courts, 10 players; Pro: 6 courts, unlimited players), enforced server-side.
 
 **What's genuinely good:**
 
@@ -539,6 +540,70 @@ accepted rather than overlooked.
 
 ---
 
+#### Phase 3a.1 — Room names `✅` *(inserted — done 2026-09-12)*
+
+**Goal:** let an organizer tell their rooms apart.
+
+**Why it jumped the queue.** A room's only identity was its share code, and a code from an
+unambiguous alphabet is built to be unguessable — which makes it unmemorable by construction.
+`/rooms` showed `DW5WDMZE` over `6 courts · Aug 9, 2026`, which says nothing about whether that is
+the Tuesday club or the Saturday juniors. Phase 3a made this worse in the same week by capping free
+accounts at 2 saved rooms, so each one is now worth keeping and telling apart. Independent of the
+identity chain, and it touches `sessions` — the table 3b's `transfer_room_ownership` will also touch
+— so doing it first meant one migration against a settled schema rather than two racing ones.
+
+**Shipped:** an optional `sessions.name`, a pencil beside it in the room header, and the name on all
+three surfaces a room is identified by — the header, the `/rooms` rows, and `document.title`.
+Renaming is gated by `session_is_editable()`, **not** ownership: a name is content, like the court
+count and player names, where `locked` and `owner_id` are security controls.
+
+**The mechanic was forced, and the reason is worth keeping.** The obvious build — add the column,
+extend the `UPDATE (courts, updated_at)` grant, write it with a PostgREST `.update()` the way
+`updatePlayer` does — **is broken on most of the rooms that exist.** Phase 3a's `sessions_update`
+`with check` carries the plan court cap, and a `with check` is evaluated against the NEW row on
+*every* update, not only ones touching the column it names. Three of the five production rooms are
+grandfathered above their cap and deliberately keep their courts, so for them `courts <= max_courts`
+is false and **any** update is refused 42501 — a pure rename included. RLS cannot reference `OLD`,
+so the clause cannot be made conditional on `courts` changing; and a second permissive policy
+carving out renames would be a security hole, since permissive policies are OR'd and cannot be
+column-scoped, so a court raise would simply pass through it. What remains is a `SECURITY DEFINER`
+RPC. `set_room_name` is therefore the second `DEFINER` function after `set_room_lock`, and for a
+different reason: the lock re-checks ownership, this re-checks editability.
+
+**Measured, not assumed.** The trap is now characterized by a test in `tests/rls/plan_limits.test.ts`
+— a bare `updated_at` touch on a 5-court free room raises 42501 — deliberately filed there rather
+than with the RPC, because the person retuning limits is the one who needs to know a rename depends
+on it. CLAUDE.md carries the general form: **any future writable column on `sessions` needs the same
+treatment.**
+
+**Two smaller things that would have shipped as bugs.** `normalizeRoomName` truncates by **code
+point**, not `.slice()` — slicing counts UTF-16 units, so a name one emoji over the 60-char cap loses
+half a surrogate pair and Postgres rejects the lone surrogate as invalid UTF-8 (22021), i.e. a raw
+encoding error in the user's error banner. And it strips C0 control characters, which JS `\s` does not
+match and which reach Postgres the same way. It also collapses internal whitespace where
+`normalizePlayerName` only trims, because the value lands in `document.title` and in single-line
+`truncate` elements — and it returns `null` rather than `""` for blank, which is the *opposite* of
+`normalizePlayerName`'s empty-means-don't-write contract: a player must be called something, a room
+need not be, so clearing the name has to be reachable. That is also why the modal's Save is never
+disabled.
+
+**TDD'd**: `tests/logic/room_name.test.ts` (10 cases, written and watched fail) and
+`tests/rpc/set_room_name.test.ts` (10, likewise) — including the load-bearing one, that a
+grandfathered room can still be renamed, which fails against the column-grant build. Plus a
+`session_columns` case proving `name` stayed ungranted, so the RPC really is the only door, and the
+`plan_limits` characterization above. **111 tests pass**, up from 89. `tsc` / `eslint` /
+`next build` clean, and the migration re-applied a second time against the same database to prove
+`if not exists` / `do $$` / `create or replace` hold.
+
+**Deliberately not done:** renaming from `/rooms` (the overflow menu has everything it needs — ~15
+lines — but the pencil in the room is the discoverable path, and it's worth seeing whether the
+placeholder on that list actually bothers anyone first); naming a room at creation, which would put a
+form in front of the one-tap create path; the name in OG/share metadata, which needs a server-side
+read this app has never had and belongs with Phase 4's metadata work; and a name in the URL —
+`/s/CODE` stays the capability URL, and a name is a label, never an address.
+
+---
+
 #### Phase 3b — The identity chain at the paywall `⬜`
 
 Claim tickets, `transfer_room_ownership`, just-in-time sign-in at the gate, and the
@@ -633,6 +698,7 @@ Pro features are genuinely worth paying for.
 | 2.5 | Edit player name & skill _(inserted)_ | Fix a typo without losing games played | ~0.5 wknd | ✅ |
 | 2.6 | **UI redesign** _(inserted)_ | Tokens, dark mode, 44px targets — something you can charge for | ~1 wknd | ✅ |
 | 3a | **Entitlements & server-enforced limits** | Something to sell, and gates that hold | ~1 wknd | ✅ |
+| 3a.1 | Room names _(inserted)_ | Tell two rooms apart without decoding a share code | ~0.5 wknd | ✅ |
 | 3b | Identity chain at the paywall | A purchase that survives the browser | ~1 wknd | ⬜ |
 | 3c | Checkout, webhook & error monitoring | Revenue | ~2 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
@@ -740,6 +806,40 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-09-12** — **Room names (inserted after Phase 3a).** A room can now be named, and the name
+  shows in the three places a room is identified: the header (with a pencil beside it), the `/rooms`
+  rows, and the browser tab. A code from an unambiguous alphabet is unguessable by design and so
+  unmemorable by construction — and Phase 3a had just capped free accounts at 2 saved rooms, making
+  each one worth telling apart. Renaming is gated by `session_is_editable()`, **not** ownership: a
+  name is content, like courts and player names, where `locked` and `owner_id` are security
+  controls. **The mechanic was forced.** The obvious build — add the column, widen the
+  `UPDATE (courts, updated_at)` grant, write it through PostgREST like `updatePlayer` — is broken on
+  most existing rooms: Phase 3a's `sessions_update` `with check` carries the court cap, and a
+  `with check` is evaluated against the NEW row on **every** update, not only ones touching the
+  column it names. Three of the five production rooms are grandfathered above their cap and keep
+  their courts on purpose, so for them *any* update raises 42501 — a pure rename included. RLS can't
+  reference `OLD`, and a second permissive policy carving out renames would be a hole (permissive
+  policies are OR'd and can't be column-scoped, so a court raise would pass through it). What
+  remains is a `SECURITY DEFINER` RPC — `set_room_name`, the second after `set_room_lock`, and for a
+  different reason: the lock re-checks ownership, this re-checks editability. The trap is now
+  **characterized** by a test in `tests/rls/plan_limits.test.ts` rather than left to be rediscovered,
+  filed there because whoever retunes the limits is who needs to know; CLAUDE.md carries the general
+  rule that **any future writable column on `sessions` needs the same treatment**. **Two bugs caught
+  before shipping:** `normalizeRoomName` truncates by **code point**, since `.slice()` counts UTF-16
+  units and a name one emoji over the cap loses half a surrogate pair, which Postgres rejects as
+  invalid UTF-8 (22021) — a raw encoding error in the user's banner; and it strips C0 controls, which
+  JS `\s` doesn't match and which arrive the same way. It also returns `null` rather than `""` for
+  blank — the *opposite* of `normalizePlayerName`'s empty-means-don't-write contract, because a
+  player must be called something and a room need not be, which is likewise why the rename modal's
+  Save is never disabled. **TDD'd**: 20 new tests written and watched fail, including the
+  load-bearing one — a grandfathered room can still be renamed — plus a `session_columns` case
+  proving `name` stayed ungranted so the RPC is the only door. **111 tests pass**, up from 89;
+  `tsc` / `eslint` / `next build` clean, and the migration re-applied against the same database to
+  prove it's re-runnable. New: `app/components/RenameRoomModal.tsx`,
+  `supabase/migrations/20260912120000_room_names.sql`. `.roomrow .rc` was deleted rather than left
+  dead once the share code moved off the primary line. **Deliberately not done:** renaming from
+  `/rooms`, naming at creation, the name in OG metadata, and a name in the URL — `/s/CODE` stays the
+  capability URL, and a name is a label, never an address.
 - **2026-09-12** — **Phase 3a: entitlements and server-enforced free-tier limits.** The app now has
   something to sell and gates that hold. Free gets **2 courts, 10 players per room, 2 saved rooms**;
   Pro lifts all three. New `entitlements` table, writable only by `service_role` — RLS on, no
