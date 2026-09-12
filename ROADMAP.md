@@ -494,9 +494,17 @@ carve-out, the grandfathered ratchet, and the `service_role` exemption. **89 tes
 73. One pre-existing test needed the owner marked Pro: its subject is a stranger being *allowed* to
 act, not the cap. `tsc` / `eslint` / `next build` clean, and the gates re-verified over real HTTP.
 
-**Deliberately not done:** anything that takes money (3b/3c below), grandfathering existing accounts
-into Pro, and publishing `entitlements` to Realtime — while upgrades are manual a plan change need
-not reach an open room live, though 3c will want it.
+**Deliberately not done:** anything that takes money (3b/3c below), and publishing `entitlements` to
+Realtime — while upgrades are manual a plan change need not reach an open room live, though 3c will
+want it.
+
+**Nobody is grandfathered, including the author** _(decided 2026-09-12, at deploy)_. Every existing
+account starts on free, and no `pro` row is seeded. Two reasons: these numbers are an explicit
+hypothesis, and the fastest way to find out whether 2 courts and 10 players actually fit a club
+night is to run one under them; and a grandfathered cohort would be permanently invisible in the
+data, indistinguishable from people who paid once 3c ships. The cost is real — existing rooms sit
+above their cap until someone lowers them (they keep playing; see the ratchet above) — and it is
+accepted rather than overlooked.
 
 ---
 
