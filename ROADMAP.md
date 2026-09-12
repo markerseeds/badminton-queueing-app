@@ -772,6 +772,18 @@ Track choices here so the "why" isn't lost.
   real club nights is a one-line migration. Note the consequence that forced a second change: a free
   cap of 2 made `createSession`'s hardcoded `courts: 3` illegal, so new rooms now start at 2 and
   every pre-existing room is above its cap (it keeps its courts, and ratchets down). _(2026-09-12)_
+- [x] **Who may rename a room — anyone who can edit, not just the owner.** A name is *content*, like
+  the court count and player names; `locked` and `owner_id` are the security controls. So renaming is
+  gated by `session_is_editable()` and the pencil is hidden on `readOnly`, **not** on `isOwner` — the
+  courtside tablet and a co-organizer hold the code, not the account, and making the organizer the
+  only person who can fix a typo would be the bottleneck the whole open-by-default model exists to
+  avoid. Accepted cost: a stranger holding the code can rename the room, and the remedy is the same
+  as for every other edit — the per-room lock. _(2026-09-12)_
+- [x] **A room's name is never its address.** `/s/CODE` stays the capability URL; the name is a label
+  on top of it, nullable, and changeable by anyone who can edit. Putting it in the URL would make a
+  rename break every shared link, and would leak a club's name into a thing people paste around.
+  Same reason the name is not in OG/share metadata yet — that needs a server-side read this app has
+  never had (Phase 4). _(2026-09-12)_
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
 - [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
   only gate is its unguessable code. Revisit view-only / owner-only roles in Phase 2. _(2026-07-04)_
@@ -835,7 +847,15 @@ Track choices here so the "why" isn't lost.
   load-bearing one — a grandfathered room can still be renamed — plus a `session_columns` case
   proving `name` stayed ungranted so the RPC is the only door. **111 tests pass**, up from 89;
   `tsc` / `eslint` / `next build` clean, and the migration re-applied against the same database to
-  prove it's re-runnable. New: `app/components/RenameRoomModal.tsx`,
+  prove it's re-runnable. **Not verified: how it looks** — there are no component tests and the
+  vitest environment is `node`, so layout, dark mode and a 60-character name at phone width were
+  checked by hand against a dev server, not asserted. **Two things learned about the machine, not the
+  code:** the 44px touch floor nearly got broken (the pencil started at 36px before the design review
+  caught it), and the DB suite's flakiness was traced to a `npm run dev` left running against the
+  local stack — enough on its own to time out 16 tests. `npx vitest run --no-file-parallelism` is the
+  reliable whole-suite signal, now in CLAUDE.md in place of the per-file advice. Diagnose before
+  reaching for it: *timeouts with zero assertion errors* is contention, assertion errors are a real
+  regression. New: `app/components/RenameRoomModal.tsx`,
   `supabase/migrations/20260912120000_room_names.sql`. `.roomrow .rc` was deleted rather than left
   dead once the share code moved off the primary line. **Deliberately not done:** renaming from
   `/rooms`, naming at creation, the name in OG metadata, and a name in the URL — `/s/CODE` stays the
@@ -883,7 +903,9 @@ Track choices here so the "why" isn't lost.
   untouched), and the DB suite is **flaky under file parallelism on a machine running two stacks** —
   proven pre-existing by reproducing it on the pre-Phase-3a schema with the migration removed
   entirely, so it is a resource-contention problem, not a regression. Both are written up in
-  CLAUDE.md, along with the per-file workaround that gives a trustworthy signal.
+  CLAUDE.md, along with the per-file workaround that gives a trustworthy signal. _(Superseded
+  2026-09-12: `npx vitest run --no-file-parallelism` gives the same trustworthy signal for the
+  **whole** suite in one command — see the room-names entry above.)_
 - **2026-09-11** — **Loading states that actually read as loading.** The `/rooms` placeholder
   rendered as two blank rounded rectangles. It used `bg-surface-2` — the *recessed* tone — with no
   border, plus Tailwind's `animate-pulse`, which animates opacity only. Measured, the bar sat at
