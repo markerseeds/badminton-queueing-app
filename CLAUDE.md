@@ -41,6 +41,16 @@ npx vitest run -t "lets a stranger add, queue and delete players"
 Only `tests/logic/` and `tests/lib/` run without the local stack; `tests/rpc/` and `tests/rls/` need it.
 CI ([.github/workflows/test.yml](.github/workflows/test.yml)) boots the stack and exports the env vars itself.
 
+The local stack listens on **55321–55329**, not the CLI's default 54321–54329, so it can run
+alongside another local Supabase project (only one stack can own a port, and every project gets the
+same defaults). Local only — CI boots its own stack and production is unaffected — but it does mean
+`.env.local` needs the shifted API URL for `npm run dev` against local, and `.env.test` must be
+regenerated after any port change.
+
+If DB tests fail *en masse* with 20s timeouts rather than assertion errors, suspect resource
+contention rather than your change: vitest runs files in parallel, and a machine hosting a second
+Supabase stack can't keep up. `npx vitest run <one file>` per file is the reliable signal.
+
 ## Architecture
 
 ### Two containment modules
@@ -98,9 +108,47 @@ to the `actions` object in `useSession` and wrapped in `act` — don't hand-roll
 - **Column grants, not policies, protect ownership.** `anon`/`authenticated` hold `UPDATE (courts,
   updated_at)` on `sessions` and nothing else, so `owner_id`, `share_code`, and `locked` cannot be
   written through PostgREST at all. That's what lets `set_courts` stay open to non-owners safely.
+  `players` is grant-restricted the same way: `UPDATE` covers name, skill, games_played, status,
+  queue_position, court_no and court_slot, so `session_id` can't be rewritten to walk a player into
+  another room past its player cap.
 
 `RoomClient`'s `readOnly` flag mirrors `session_is_editable()` in SQL. If you change one, change the
 other — the SQL is the real gate, the flag just keeps the UI honest.
+
+### Plan limits are a second predicate family, asking a different question
+
+`session_is_editable(session_id)` asks *"may the caller write here?"*. A plan cap asks *"what plan
+does this room's **owner** have?"* — with no reference to `auth.uid()`, because the person changing
+courts on club night is usually a stranger holding the share code. Don't bolt a plan clause onto
+`session_is_editable`; the two answer different questions.
+
+The numbers live in exactly one place, `plan_limits(plan)`. Everything else derives:
+`account_plan(user_id)` → the plan on an account, `room_owner_plan(owner_id)` → the same but `null`
+owner means **`pro`** (ownerless falls back to permissive, as it does for editing), and
+`session_limits(session_id)` / `my_limits()` → what the UI reads so its gates can't drift from the
+server's. Retuning a limit should be a one-line migration and nothing else.
+
+**Where each cap lives is forced, not stylistic:**
+
+- **Courts → the `sessions_update` / `sessions_insert` `with check`.** Not inside `set_courts`:
+  the column grant above means `courts` is writable straight through PostgREST, so a check in the
+  RPC is one `PATCH` from bypass. A `with check` failure also *raises* 42501 (a `using` failure
+  silently matches no rows), which is what rolls `set_courts`' player-idling UPDATE back with it.
+- **Players → an `AFTER INSERT … FOR EACH STATEMENT` trigger.** `addPlayers` sends the batch as one
+  INSERT, and under READ COMMITTED every row is checked against the statement's opening snapshot —
+  so a count in a `with check` or a `BEFORE ROW` trigger sees "0 players" for all of them and the
+  whole batch lands. Only a statement-level AFTER trigger sees the real total. It takes the same
+  `pg_advisory_xact_lock` the RPCs take.
+- **Rooms → the `sessions_insert` `with check`**, counting through `owned_room_count()`.
+
+**Two asymmetries that will bite you.** RLS policies exempt `service_role` automatically; a trigger
+does not, so `enforce_player_limit` checks `current_user` itself — without that, every test helper
+seeding a full board breaks. And it is `SECURITY INVOKER` for that reason: inside a `SECURITY
+DEFINER` function `current_user` is the function's *owner*, not the caller.
+
+Postgres also refuses transition tables on a multi-event trigger **and** on a trigger with a column
+list (`0A000` both ways). That's why there's no `update of session_id` trigger — the column grant
+covers it instead, at no cost to the hot paths.
 
 ### Auth: anonymous-on-create only
 

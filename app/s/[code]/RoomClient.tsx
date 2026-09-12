@@ -143,6 +143,16 @@ export function RoomClient({ code }: { code: string }) {
   const isOwner = state.ownerId !== null && state.ownerId === user?.id;
   const readOnly = state.locked && state.ownerId !== null && !isOwner;
 
+  // The plan gates mirror their SQL counterparts the same way `readOnly` mirrors
+  // session_is_editable(). Note these follow the room's OWNER, not whoever is
+  // looking — a stranger holding the code is judged by the owner's plan, because
+  // that is what the policies will judge their writes by. Counted against the
+  // whole roster: queued and on-court players still occupy a slot.
+  const playersRemaining = Math.max(
+    0,
+    state.limits.maxPlayers - state.players.length,
+  );
+
   const nextFour = state.queue.slice(0, 4);
 
   return (
@@ -196,6 +206,7 @@ export function RoomClient({ code }: { code: string }) {
       <CourtBoard
         games={state.games}
         courts={state.courts}
+        maxCourts={state.limits.maxCourts}
         readOnly={readOnly}
         onChangeCourts={actions.changeCourts}
         onEndGame={(courtNumber) => confirmEndGame(courtNumber)}
@@ -215,6 +226,7 @@ export function RoomClient({ code }: { code: string }) {
         />
         <PlayerList
           availablePlayers={availablePlayers}
+          playersRemaining={playersRemaining}
           readOnly={readOnly}
           onAdd={() => setShowModal(true)}
           onAutoPick={actions.autoPick}
@@ -275,6 +287,7 @@ export function RoomClient({ code }: { code: string }) {
 
       {showBatchModal && (
         <BatchAddModal
+          remaining={playersRemaining}
           onSubmit={(nps) => {
             actions.batchAdd(nps);
             setShowBatchModal(false);

@@ -5,12 +5,18 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { parseBatchInput } from "../lib/logic";
 import type { NewPlayer } from "../lib/types";
 import { WarningIcon } from "./icons";
+import { LimitNote } from "./LimitNote";
 import { Button } from "./ui";
 
 export function BatchAddModal({
+  remaining,
   onSubmit,
   onCancel,
 }: {
+  // Player slots left on this room's plan. The batch is one INSERT statement and
+  // the SQL trigger rejects the whole thing, so a paste that overshoots has to be
+  // caught here rather than landing partially.
+  remaining: number;
   onSubmit: (players: NewPlayer[]) => void;
   onCancel: () => void;
 }) {
@@ -20,9 +26,11 @@ export function BatchAddModal({
   useEscapeKey(onCancel);
 
   const lineCount = batchInput.split("\n").filter((l) => l.trim()).length;
+  const tooMany = lineCount > remaining;
 
   const handleImport = () => {
     setBatchError(null);
+    if (tooMany) return;
     const { players, error } = parseBatchInput(batchInput);
     if (error) {
       setBatchError(error);
@@ -83,6 +91,14 @@ Wei Chen, intermediate`}
             <WarningIcon size={16} className="mt-0.5 shrink-0" />
             {batchError}
           </p>
+        ) : tooMany ? (
+          <LimitNote>
+            {remaining === 0
+              ? "This room is already full on the free plan."
+              : `Only ${remaining} more ${
+                  remaining === 1 ? "player" : "players"
+                } fit on the free plan — that's ${lineCount}.`}
+          </LimitNote>
         ) : (
           <p className="tiny num">
             {lineCount === 0
@@ -95,7 +111,7 @@ Wei Chen, intermediate`}
           <Button variant="quiet" onClick={onCancel}>
             Cancel
           </Button>
-          <Button onClick={handleImport} disabled={lineCount === 0}>
+          <Button onClick={handleImport} disabled={lineCount === 0 || tooMany}>
             Add {lineCount > 0 ? lineCount : ""}{" "}
             {lineCount === 1 ? "player" : "players"}
           </Button>

@@ -4,14 +4,18 @@
 // shape the UI renders from.
 
 import { ensureUser } from "./auth";
+import { DEFAULT_COURTS } from "./constants";
 import { supabase } from "./supabase";
 import type {
+  AccountLimits,
   CourtGame,
   LoadedSession,
   NewPlayer,
+  PlanName,
   Player,
   PlayerStatus,
   RoomSummary,
+  SessionLimits,
 } from "./types";
 
 // ---------- row shapes (snake_case, as stored) ----------
@@ -21,6 +25,16 @@ type SessionRow = {
   courts: number;
   owner_id: string | null;
   locked: boolean;
+};
+
+// `plan_limits()` / `session_limits()` / `my_limits()` all return one-row tables,
+// so supabase-js hands them back as arrays. Only the latter two carry `plan`
+// (plan_limits is given one), and only `my_limits` carries `max_rooms`.
+type LimitsRow = {
+  plan?: string;
+  max_courts: number;
+  max_players: number;
+  max_rooms?: number;
 };
 
 type PlayerRow = {
@@ -65,7 +79,24 @@ const toPlayer = (r: PlayerRow): Player => ({
   gamesPlayed: r.games_played,
 });
 
-function assembleSession(session: SessionRow, rows: PlayerRow[]): LoadedSession {
+// The numbers themselves live in SQL (`plan_limits()`), never here — the whole
+// point of reading them back is that the UI's gates and the server's stay the
+// same gate. So a missing row is an error rather than a guessed default.
+function toLimits(rows: LimitsRow[] | null): SessionLimits {
+  const row = rows?.[0];
+  if (!row?.plan) throw new Error("Could not read this room's plan limits.");
+  return {
+    plan: row.plan as PlanName,
+    maxCourts: row.max_courts,
+    maxPlayers: row.max_players,
+  };
+}
+
+function assembleSession(
+  session: SessionRow,
+  rows: PlayerRow[],
+  limits: SessionLimits,
+): LoadedSession {
   const players = rows.map(toPlayer);
 
   const queue = rows
@@ -88,6 +119,7 @@ function assembleSession(session: SessionRow, rows: PlayerRow[]): LoadedSession 
     courts: session.courts,
     ownerId: session.owner_id,
     locked: session.locked,
+    limits,
     players,
     queue,
     games,
@@ -106,12 +138,29 @@ export async function createSession(): Promise<{ id: string; shareCode: string }
     const shareCode = generateShareCode();
     const { data, error } = await supabase
       .from("sessions")
-      .insert({ share_code: shareCode, courts: 3, owner_id: user.id })
+      .insert({
+        share_code: shareCode,
+        courts: DEFAULT_COURTS,
+        owner_id: user.id,
+      })
       .select("id, share_code")
       .single();
 
     if (!error && data) return { id: data.id, shareCode: data.share_code };
-    if (error && error.code !== "23505") throw error; // 23505 = unique_violation
+    if (error?.code === "23505") continue; // unique_violation — new code, retry
+
+    // `sessions_insert` also carries the saved-room cap, and a blocked insert
+    // arrives as a bare "new row violates row-level security policy". This is
+    // the only path that inserts a session, so the translation is unambiguous
+    // here — and unlike the room's other gates there is no count on this screen
+    // to pre-check against, so the message is all the user gets.
+    if (error?.code === "42501") {
+      throw new Error(
+        "You've reached your plan's limit on saved rooms. Delete one to make " +
+          "space, or upgrade to Pro for unlimited rooms.",
+      );
+    }
+    if (error) throw error;
   }
   throw new Error("Could not generate a unique room code. Please try again.");
 }
@@ -127,15 +176,57 @@ export async function getSessionByCode(
   if (error) throw error;
   if (!session) return null;
 
-  const { data: rows, error: rowsError } = await supabase
-    .from("players")
-    .select(
-      "id, session_id, name, skill, games_played, status, queue_position, court_no, court_slot",
-    )
-    .eq("session_id", session.id);
-  if (rowsError) throw rowsError;
+  // Both are keyed on the session id and neither depends on the other, so they
+  // go together rather than in series.
+  const [rows, limits] = await Promise.all([
+    supabase
+      .from("players")
+      .select(
+        "id, session_id, name, skill, games_played, status, queue_position, court_no, court_slot",
+      )
+      .eq("session_id", session.id),
+    supabase.rpc("session_limits", { p_session_id: session.id }),
+  ]);
+  if (rows.error) throw rows.error;
+  if (limits.error) throw limits.error;
 
-  return assembleSession(session as SessionRow, (rows ?? []) as PlayerRow[]);
+  return assembleSession(
+    session as SessionRow,
+    (rows.data ?? []) as PlayerRow[],
+    toLimits(limits.data as LimitsRow[] | null),
+  );
+}
+
+// The published ceilings for a plan, read from the same `plan_limits()` the
+// policies consult — so the pricing page can't advertise a number the server
+// would refuse to honour. Callable signed out.
+export async function getPlanLimits(plan: PlanName): Promise<AccountLimits> {
+  const { data, error } = await supabase.rpc("plan_limits", { p_plan: plan });
+  if (error) throw error;
+  const row = (data as LimitsRow[] | null)?.[0];
+  if (!row) throw new Error(`No limits are defined for the ${plan} plan.`);
+  return {
+    plan,
+    maxCourts: row.max_courts,
+    maxPlayers: row.max_players,
+    maxRooms: row.max_rooms ?? 0,
+  };
+}
+
+// The signed-in account's own ceilings, for surfaces that aren't about one
+// particular room. Null when signed out — `my_limits()` returns no row without
+// a caller, deliberately, rather than defaulting.
+export async function getMyLimits(): Promise<AccountLimits | null> {
+  const { data, error } = await supabase.rpc("my_limits");
+  if (error) throw error;
+  const row = (data as LimitsRow[] | null)?.[0];
+  if (!row?.plan) return null;
+  return {
+    plan: row.plan as PlanName,
+    maxCourts: row.max_courts,
+    maxPlayers: row.max_players,
+    maxRooms: row.max_rooms ?? 0,
+  };
 }
 
 // Rooms owned by the signed-in user. RLS lets anyone SELECT any session (a
@@ -271,9 +362,10 @@ export async function setGamesPlayed(
 }
 
 // Rename a player and/or change their skill band. Single row, so PostgREST
-// direct — no RPC needed. `players` has a full-column UPDATE grant gated only by
-// the `session_is_editable(session_id)` policy, unlike `sessions` whose UPDATE is
-// column-restricted to (courts, updated_at).
+// direct — no RPC needed. `name` and `skill` are both inside the column-level
+// UPDATE grant on `players`, gated by the `session_is_editable(session_id)`
+// policy. (Phase 3a narrowed that grant: `session_id` is no longer writable, so
+// a player can't be moved into another room past its player cap.)
 export async function updatePlayer(
   playerId: string,
   details: { name: string; skill: string },

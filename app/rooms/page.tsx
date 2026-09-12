@@ -5,10 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { AccountBar } from "../components/AccountBar";
 import { ConfirmationModal } from "../components/ConfirmationModal";
 import { LockIcon, MoreIcon, TrashIcon, WarningIcon } from "../components/icons";
-import { IconButton } from "../components/ui";
+import { LimitNote } from "../components/LimitNote";
+import { Button, IconButton } from "../components/ui";
 import { useAuth } from "../hooks/useAuth";
-import { deleteRoom, listMyRooms } from "../lib/sessionStore";
-import type { RoomSummary } from "../lib/types";
+import { deleteRoom, getMyLimits, listMyRooms } from "../lib/sessionStore";
+import type { AccountLimits, RoomSummary } from "../lib/types";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -46,6 +47,9 @@ function RoomsSkeleton() {
 export default function MyRoomsPage() {
   const { user, isSignedIn, loading: authLoading } = useAuth();
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
+  // Null while loading, and also for a signed-out visitor — `my_limits()`
+  // returns no row without a caller rather than defaulting to the free tier.
+  const [limits, setLimits] = useState<AccountLimits | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RoomSummary | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -62,9 +66,13 @@ export default function MyRoomsPage() {
 
     const load = async () => {
       try {
-        const data = await listMyRooms();
+        const [data, accountLimits] = await Promise.all([
+          listMyRooms(),
+          getMyLimits(),
+        ]);
         if (!active) return;
         setRooms(data);
+        setLimits(accountLimits);
         setError(null);
       } catch (e) {
         if (!active) return;
@@ -94,6 +102,9 @@ export default function MyRoomsPage() {
     }
   };
 
+  const atRoomCap =
+    limits !== null && rooms !== null && rooms.length >= limits.maxRooms;
+
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-5 p-4 md:p-6">
       <AccountBar />
@@ -104,10 +115,25 @@ export default function MyRoomsPage() {
             <h1 className="heading text-2xl">My rooms</h1>
             <p className="muted mt-1">Rooms you&rsquo;ve created.</p>
           </div>
-          <Link href="/" className="btn btn-primary btn-sm">
-            New room
-          </Link>
+          {/* `sessions_insert` refuses the create outright at the cap, so offer
+              a dead button rather than a link into a failure. */}
+          {atRoomCap ? (
+            <Button size="sm" disabled>
+              New room
+            </Button>
+          ) : (
+            <Link href="/" className="btn btn-primary btn-sm">
+              New room
+            </Link>
+          )}
         </div>
+
+        {atRoomCap && (
+          <LimitNote>
+            {rooms!.length} of {limits!.maxRooms} rooms used on the free plan.
+            Delete one to make space, or
+          </LimitNote>
+        )}
 
         {error && (
           <div role="alert" className="banner banner-danger">

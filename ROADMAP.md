@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-09-11_
+> _Last reviewed: 2026-09-12_
 
 ---
 
@@ -68,6 +68,11 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 > An *unlocked* room's contents are still reachable by anyone with the code — that is the deliberate
 > product choice (club night needs shared editing), and the per-room **lock** is the opt-in ceiling
 > for organizers who want one. **C4** (payments) remains (Phase 3).
+>
+> **Status (2026-09-12):** **C4 is half closed.** Phase 3a shipped the entitlement layer and the
+> feature gates — there is now a `plan` to hang a purchase on, and free-tier limits enforced in
+> Postgres rather than in the client. What remains is taking the money: checkout, the webhook that
+> writes `plan = 'pro'`, and refunds (Phase 3c).
 
 ### 🔴 Critical — these block commercialization outright
 
@@ -414,55 +419,129 @@ to have real teeth; see the changelog entry of the same date.
 
 ---
 
-### Phase 3 — Free vs Paid + payments `⬜`
+### Phase 3 — Free vs Paid + payments `🟨`
 
 **Goal:** actually sell the Pro unlock (C4).
 
-**Before starting.** The identity side is settled in §7 — see _Paying requires a real account_, _When
-the sign-in happens_ and _Rooms follow the sign-in_. Three structural things are easy to get wrong
-and cheaper to settle first:
+**Split into three, 2026-09-12.** What was one phase is really three subsystems, and only the first
+is shippable without choosing a payment provider. Splitting them means the free-tier numbers get
+validated against real club nights *before* a price is committed to — which is what the open
+question in §7 asks for — and keeps every piece runnable in the existing CI, which a checkout flow
+would not be.
 
-- **Entitlement gates ask a different question than every policy you have.** `session_is_editable()`
-  asks "may the *caller* write here?". A court cap asks "what plan does this room's *owner* have?" —
-  with no reference to `auth.uid()` at all, because the person changing courts is usually a stranger
-  holding the code, and `set_courts` stays open to them on purpose. That needs a *second*
-  `SECURITY DEFINER` predicate shaped like `session_is_editable`, not a clause bolted onto it. Get
-  this wrong and the gates end up client-side, one devtools call from being bypassed.
-- **A player cap has no server-side seam yet.** `set_courts` is an RPC a cap can live inside;
-  `addPlayer` / `addPlayers` are plain PostgREST inserts gated only by `players_write`, and the
-  batch-add path makes a count-then-insert racy. It wants a `BEFORE INSERT` trigger or a `with check`
-  predicate — decide which before writing the gate.
-- **Close the ownerless-room bypass.** `sessions_insert` still permits `owner_id is null` ("for a
-  signed-out visitor"), but `createSession` always calls `ensureUser()` first, so the app never uses
-  that arm. Once every cap keys off `owner_id`, an ownerless room is a room no cap applies to and one
-  anyone can create straight against the API. Drop the arm from the INSERT policy; keep it in the
-  *editability* predicates, where it is still right.
+- **3a — entitlements & server-enforced limits** `✅ 2026-09-12`
+- **3b — the identity chain at the paywall** `⬜`
+- **3c — checkout, webhook & error monitoring** `⬜`
 
-Two supporting pieces are also missing rather than merely unfinished: there is no `supabase/functions/`
-yet (and [vercel-migrate.mjs](scripts/vercel-migrate.mjs) only runs `db push`, so function deploys
-need their own step), and **error monitoring belongs before the first sale, not in Phase 5** — a
-webhook that 500s is a customer who paid and got nothing. Pair it with a `webhook_events` table keyed
-on the provider's event id; providers retry, so idempotency is a requirement, and keeping the raw
-payloads turns "I paid and nothing happened" into a two-minute lookup.
+---
+
+#### Phase 3a — Entitlements & server-enforced limits `✅` *(done 2026-09-12)*
+
+**Goal:** build the gate that Phase 3c's checkout will flip. No money changes hands; `pro` is
+writable only by `service_role`, which is enough to exercise every limit end-to-end.
+
+**Shipped:** free = **2 courts, 10 players per room, 2 saved rooms**; pro = 6 courts (the table's
+`CHECK` ceiling) and unlimited players and rooms. An `entitlements` table, a `plan_limits()` /
+`account_plan()` / `room_owner_plan()` predicate family, `session_limits()` + `my_limits()` as the
+UI's honest mirror, a `/pricing` page that reads its own numbers out of `plan_limits()` so it
+cannot advertise a ceiling the server would refuse, and upgrade affordances at each gate.
+
+**The rule the whole design encodes:** a limit follows the room's **owner**, not the caller.
+`session_is_editable()` asks "may *you* write here?"; a cap asks "what plan does this room's owner
+have?" — with no reference to `auth.uid()`, because the person changing courts on club night is
+usually a stranger holding the share code and `set_courts` stays open to them on purpose.
+
+**Three mechanics that were forced rather than chosen** — each one a wrong turn avoided:
+
+1. **The court cap cannot live inside `set_courts`.** Phase 2 granted `anon`/`authenticated` a
+   column-level `UPDATE (courts, updated_at)` — that is what lets the RPC stay `SECURITY INVOKER`
+   and open to non-owners — so `courts` is writable straight through PostgREST and a check inside
+   the function would be one `PATCH` away from bypass. It lives in the `sessions_update`
+   `with check`, which covers both paths. Being a `with check` rather than a `using` also makes the
+   failure honest: a `using` miss matches no rows silently, while a with-check violation raises
+   42501 and takes `set_courts`' player-idling UPDATE down with it. *(Verified over HTTP: a direct
+   `PATCH {"courts":5}` on a free room is refused.)*
+2. **The player cap cannot be a `with check` or a `BEFORE ROW` trigger.** `addPlayers` sends the
+   batch as one INSERT, and under READ COMMITTED every row is checked against the statement's
+   opening snapshot — so all 15 pasted names independently see "0 players, fine" and all land.
+   **Measured, not assumed:** the test was written first and watched do exactly that. It needs an
+   `AFTER … FOR EACH STATEMENT` trigger, which is the only place the real total exists.
+3. **Policies for courts and rooms, a trigger for players — and the asymmetry costs a line.**
+   Policies exempt `service_role` automatically, which the test helpers and the Phase 3c webhook
+   both need; a trigger does not, so the exemption is written out in its body.
+
+**Two things Postgres refused along the way**, both worth remembering: transition tables can't be
+used on a multi-event trigger, *or* on a trigger with a column list (`0A000` either way). So the
+"move a player into a full room" route is closed by a **column grant** instead — `players` had a
+plain full-column UPDATE grant, and `session_id` / `id` / `created_at` are now revoked, since
+nothing has ever written them. Same mechanism Phase 2 used for `owner_id`, and it costs nothing on
+`enqueue_players` / `start_game` / the games counter, which a catch-all UPDATE trigger would have
+taxed all night.
+
+**Also settled:** an **ownerless room resolves to `pro`**, for the same reason it falls back to
+*open* for editing — a deleted account shouldn't truncate a club from 6 courts to 2 mid-night. That
+is only safe because `sessions_insert` **lost its `owner_id is null` arm** in the same migration;
+otherwise a free unlimited tier would be one `curl` away. The arm stays in the *editability*
+predicates, where it is still right.
+
+**Grandfathering:** a room above its cap keeps its courts until someone changes them, then ratchets
+down. The stepper's `−` jumps straight to the ceiling rather than one step at a time, because every
+intermediate value is still over the cap and would be rejected the whole way down.
+
+**TDD'd**: `tests/rls/plan_limits.test.ts` written first and watched fail — 16 cases including the
+bulk-insert one above, both directions of "the owner's plan, not the caller's", the ownerless
+carve-out, the grandfathered ratchet, and the `service_role` exemption. **89 tests pass**, up from
+73. One pre-existing test needed the owner marked Pro: its subject is a stranger being *allowed* to
+act, not the cap. `tsc` / `eslint` / `next build` clean, and the gates re-verified over real HTTP.
+
+**Deliberately not done:** anything that takes money (3b/3c below), grandfathering existing accounts
+into Pro, and publishing `entitlements` to Realtime — while upgrades are manual a plan change need
+not reach an open room live, though 3c will want it.
+
+---
+
+#### Phase 3b — The identity chain at the paywall `⬜`
+
+Claim tickets, `transfer_room_ownership`, just-in-time sign-in at the gate, and the
+`plan = 'pro' ⇒ is_anonymous = false` invariant. All three are settled in §7 — see _Paying requires
+a real account_, _When the sign-in happens_ and _Rooms follow the sign-in_. Also fixes the known gap
+where linking a Google account that already exists drops rooms off "My rooms".
+
+---
+
+#### Phase 3c — Checkout, webhook & error monitoring `⬜`
+
+**Before starting.** Two structural things are easy to get wrong and cheaper to settle first:
+
+- **There is no `supabase/functions/` yet**, and [vercel-migrate.mjs](scripts/vercel-migrate.mjs)
+  only runs `db push` — so function deploys and `supabase secrets set` need their own build step.
+  `supabase/config.toml` also has no `[functions.*]` block, so a webhook endpoint needing
+  `verify_jwt = false` (providers can't send a Supabase JWT) has no precedent in the file.
+- **Error monitoring belongs before the first sale, not in Phase 5** — a webhook that 500s is a
+  customer who paid and got nothing. Pair it with a `webhook_events` table keyed on the provider's
+  event id; providers retry, so idempotency is a requirement, and keeping the raw payloads turns
+  "I paid and nothing happened" into a two-minute lookup.
 
 **Scope**
 
-- **Entitlement model:** a `plan` column (or `entitlements` table) on the user, read via
-  RLS-protected query to gate features (a field, not a boolean — future-proofing). Note that
-  `sessions_select` is `using (true)`, so anything stored on `sessions` is world-readable: a tier
-  label there is fine and in fact necessary (a stranger's browser must know the room's tier to render
-  gates honestly, the way `readOnly` mirrors `session_is_editable`), but provider customer ids and
-  receipt data belong in a separate table with an owner-only policy.
-- Build the **feature gates** for the split in §3 (court/player limits, multiple sessions, etc.).
 - **Checkout:** Lemon Squeezy / Paddle (recommended) or Stripe; a **Supabase Edge Function** webhook
-  verifies the purchase and sets `plan: "pro"`.
+  verifies the purchase and writes `entitlements.plan = 'pro'` with the service-role key. Phase 3a
+  already made that the *only* way in: `entitlements` has RLS on, no policies, and no DML grant to
+  `anon`/`authenticated`. Provider customer ids and receipt data go in their own table with an
+  owner-only policy, **not** on `sessions` — `sessions_select` is `using (true)`, so anything stored
+  there is world-readable.
+- Assert the **`plan = 'pro' ⇒ is_anonymous = false`** invariant in the function, not only the UI, so
+  a replayed webhook or a hand-made checkout URL can't violate it (needs 3b).
 - Handle **restore / verify** across devices and **refunds** (flip back to free).
-- Add a **pricing page** and upgrade CTAs at each gate.
+- Publish `entitlements` to Realtime, or reload on upgrade — Phase 3a left it unpublished because a
+  manual plan change needn't reach an open room live, but a purchase should.
+- Wire the `/pricing` page's Pro card to real checkout (the page, its limits and the upgrade
+  affordances at each gate already exist).
 
-**Done when:** a test purchase flips the account to Pro and unlocks features; free limits are
-enforced; the entitlement survives refresh and works across devices.
+**Done when:** a test purchase flips the account to Pro and unlocks features; the entitlement
+survives refresh and works across devices; a replayed webhook is a no-op.
 
-**Effort:** ~3 weekends.
+**Effort:** ~2 weekends (3a took the gates off the top).
 
 ---
 
@@ -514,7 +593,9 @@ Pro features are genuinely worth paying for.
 | 2 | Accounts & ownership (Supabase Auth + RLS) | Identity for entitlements | ~2 wknds | ✅ |
 | 2.5 | Edit player name & skill _(inserted)_ | Fix a typo without losing games played | ~0.5 wknd | ✅ |
 | 2.6 | **UI redesign** _(inserted)_ | Tokens, dark mode, 44px targets — something you can charge for | ~1 wknd | ✅ |
-| 3 | Free vs Paid + payments | Revenue | ~3 wknds | ⬜ |
+| 3a | **Entitlements & server-enforced limits** | Something to sell, and gates that hold | ~1 wknd | ✅ |
+| 3b | Identity chain at the paywall | A purchase that survives the browser | ~1 wknd | ⬜ |
+| 3c | Checkout, webhook & error monitoring | Revenue | ~2 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
 
@@ -572,11 +653,20 @@ Track choices here so the "why" isn't lost.
   is ungranted at the column level, so PostgREST cannot write it at all. Moves **all** her rooms, not
   just the one she's standing in, and runs before checkout, so there is no window in which she is Pro
   but the room in front of her is not. _(2026-09-11)_
-- [ ] **What plan does an ownerless room get?** `owner_id` is `ON DELETE SET NULL`, so a Pro owner
-  deleting their account leaves rooms with no owner and therefore no plan. Ownerless rooms already
-  fall back to *open* for editing; falling back to *free* would instead truncate a club mid-night
-  from 6 courts to 2. Decide alongside the free-tier limits.
-- [ ] **Free-tier limits** — exact court/player/session caps (validate with real use).
+- [x] **What plan does an ownerless room get? — `pro`.** `owner_id` is `ON DELETE SET NULL`, so a
+  Pro owner deleting their account leaves rooms with no owner and therefore no plan. Falling back to
+  *free* would truncate a club from 6 courts to 2 mid-night, on a room whose owner is already gone;
+  ownerless therefore falls back to permissive, never punitive, exactly as it already does for
+  *editing*. That is only safe because `sessions_insert` lost its `owner_id is null` arm in the same
+  migration — otherwise an uncapped room would be mintable by anyone straight against the API. The
+  arm stays in the *editability* predicates, where it is still right. _(2026-09-12)_
+- [x] **Free-tier limits — 2 courts, 10 players per room, 2 saved rooms.** Deliberately tighter than
+  the table in §3 sketched (2/16/1), on the reasoning in §3 that a free tier has to stay cheap to
+  serve when the revenue is one-time. Still a hypothesis: they live in one `plan_limits()` function
+  and nothing else — not the policies, not the UI, not the pricing page — so re-tuning them after
+  real club nights is a one-line migration. Note the consequence that forced a second change: a free
+  cap of 2 made `createSession`'s hardcoded `courts: 3` illegal, so new rooms now start at 2 and
+  every pre-existing room is above its cap (it keeps its courts, and ratchets down). _(2026-09-12)_
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
 - [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
   only gate is its unguessable code. Revisit view-only / owner-only roles in Phase 2. _(2026-07-04)_
@@ -611,6 +701,44 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-09-12** — **Phase 3a: entitlements and server-enforced free-tier limits.** The app now has
+  something to sell and gates that hold. Free gets **2 courts, 10 players per room, 2 saved rooms**;
+  Pro lifts all three. New `entitlements` table, writable only by `service_role` — RLS on, no
+  policies, no DML grant to `anon`/`authenticated` at all, the same "make the wrong write impossible"
+  philosophy as the ungranted `locked` column — plus a `plan_limits()` / `account_plan()` /
+  `room_owner_plan()` predicate family and `session_limits()` / `my_limits()` as the UI's mirror, the
+  way `readOnly` mirrors `session_is_editable()`. **The rule underneath all of it:** a limit follows
+  the room's *owner*, not the caller, because the person changing courts on club night is usually a
+  stranger holding the code. **Three mechanics were forced, not chosen.** (1) The court cap can't
+  live in `set_courts`: Phase 2's column-level `UPDATE (courts, updated_at)` grant means `courts` is
+  writable straight through PostgREST, so a check in the RPC is one `PATCH` from bypass — it lives in
+  the `sessions_update` `with check`, which also raises 42501 instead of silently matching no rows,
+  taking the RPC's player-idling UPDATE down with it. (2) The player cap can't be a `with check` or a
+  `BEFORE ROW` trigger: `addPlayers` is one INSERT, and under READ COMMITTED all 15 pasted names see
+  the statement's opening snapshot and all land — **measured first, then fixed** with an
+  `AFTER … FOR EACH STATEMENT` trigger. (3) Courts and rooms are policies but players is a trigger,
+  and policies exempt `service_role` automatically while a trigger does not — so that exemption is
+  written out, or every helper that seeds a full board breaks. **Two Postgres refusals worth
+  remembering:** transition tables are rejected on a multi-event trigger *and* on one with a column
+  list (`0A000`), so "move a player into a full room" is closed by **revoking the `session_id`
+  column grant** instead — nothing has ever written it, and a catch-all UPDATE trigger would have
+  taxed `enqueue_players` / `start_game` / the games counter all night. **Also:** an ownerless room
+  resolves to `pro` (a deleted account shouldn't truncate a club mid-night), which is only safe
+  because `sessions_insert` lost its `owner_id is null` arm in the same migration; `createSession`
+  now starts rooms at 2 courts, since 3 is no longer legal on free; and `/pricing` reads its own
+  numbers out of `plan_limits()` so it can't advertise a ceiling the server would refuse. **TDD'd**:
+  `tests/rls/plan_limits.test.ts` written first and watched fail — 16 cases, including both
+  directions of owner-not-caller, the ownerless carve-out, the grandfathered ratchet and the
+  `service_role` exemption. 89 tests pass, up from 73; one pre-existing test needed its owner marked
+  Pro, since its subject is a stranger being *allowed* to act. `tsc` / `eslint` / `next build` clean,
+  and the gates re-verified over real HTTP — including that the direct `PATCH {"courts":5}` bypass is
+  refused. New: `app/pricing/page.tsx`, `app/components/LimitNote.tsx`. **Deliberately not done:**
+  anything that takes money, grandfathering existing accounts into Pro, and publishing `entitlements`
+  to Realtime. **Unrelated but discovered:** local ports moved off the CLI's `5432x` defaults to
+  `5532x` so this stack can coexist with another local Supabase project (local only — CI and
+  production are untouched), and the DB suite is **flaky under file parallelism on a machine running
+  two stacks** — proven pre-existing by reproducing it on the pre-Phase-3a schema, so it is a
+  resource-contention problem, not a regression.
 - **2026-09-11** — **Loading states that actually read as loading.** The `/rooms` placeholder
   rendered as two blank rounded rectangles. It used `bg-surface-2` — the *recessed* tone — with no
   border, plus Tailwind's `animate-pulse`, which animates opacity only. Measured, the bar sat at

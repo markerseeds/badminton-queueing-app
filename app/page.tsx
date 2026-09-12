@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AccountBar } from "./components/AccountBar";
@@ -91,9 +92,11 @@ export default function Home() {
         </form>
 
         <div className="grid grid-cols-3 gap-2.5 pt-1">
+          {/* "courts at once" until Phase 3a — a free room gets 2, so the bare
+              6 was a promise the sessions_update policy would refuse to keep. */}
           <div className="proof">
             <b className="num">6</b>
-            <span className="tiny">courts at once</span>
+            <span className="tiny">courts with Pro</span>
           </div>
           <div className="proof">
             <b className="num">0</b>
@@ -104,6 +107,13 @@ export default function Home() {
             <span className="tiny">on every device</span>
           </div>
         </div>
+
+        <Link
+          href="/pricing"
+          className="tiny text-center font-semibold text-accent hover:underline"
+        >
+          Free vs Pro — what you get
+        </Link>
 
         {error && (
           <div role="alert" className="banner banner-danger">

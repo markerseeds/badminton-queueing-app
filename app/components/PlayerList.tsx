@@ -5,6 +5,7 @@ import { cn } from "../lib/cn";
 import { clampGamesPlayed, parseGamesPlayedInput } from "../lib/logic";
 import type { Player } from "../lib/types";
 import { ListIcon, MoreIcon, PencilIcon, TrashIcon } from "./icons";
+import { LimitNote } from "./LimitNote";
 import { SkillBadge } from "./SkillBadge";
 import { Button, IconButton } from "./ui";
 
@@ -145,6 +146,7 @@ function MenuItem({
 
 export function PlayerList({
   availablePlayers,
+  playersRemaining,
   readOnly = false,
   onAdd,
   onAutoPick,
@@ -156,6 +158,9 @@ export function PlayerList({
   onUpdateGamesPlayed,
 }: {
   availablePlayers: Player[];
+  // Player slots left on this room's plan. Counted against the whole roster, not
+  // `availablePlayers` — queued and on-court players still occupy a slot.
+  playersRemaining: number;
   // See the note in CourtBoard — set when the room is locked to a non-owner.
   readOnly?: boolean;
   onAdd: () => void;
@@ -189,7 +194,7 @@ export function PlayerList({
           >
             Auto-pick 4
           </Button>
-          <Button size="sm" onClick={onAdd}>
+          <Button size="sm" onClick={onAdd} disabled={playersRemaining <= 0}>
             Add
           </Button>
 
@@ -220,6 +225,12 @@ export function PlayerList({
           </Menu>
         </div>
       </div>
+
+      {/* "Add several at once" stays tappable at zero on purpose: the batch
+          modal can say how many slots are left, which a dead menu item can't. */}
+      {!readOnly && playersRemaining <= 0 && (
+        <LimitNote>This room is full on the free plan.</LimitNote>
+      )}
 
       {availablePlayers.length === 0 ? (
         <p className="muted">

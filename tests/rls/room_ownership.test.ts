@@ -9,6 +9,7 @@ import {
   getPlayers,
   seedPlayers,
   serviceClient,
+  setPlan,
 } from "../helpers/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -92,6 +93,10 @@ describe("room ownership RLS", () => {
   it("lets a stranger change the court count in an unlocked room", async () => {
     const owner = await authedClient(svc);
     ownerId = owner.userId;
+    // Pro, so the Phase 3a court cap isn't what's under test here — this case is
+    // about a stranger being *allowed* to act. The cap itself, and the fact that
+    // it follows the owner rather than the caller, live in plan_limits.test.ts.
+    await setPlan(svc, owner.userId, "pro");
     sessionId = await createTestSession(svc, 3, { ownerId: owner.userId });
 
     const { error } = await anon.rpc("set_courts", {

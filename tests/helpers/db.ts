@@ -115,8 +115,22 @@ function uniqueSuffix(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function uniqueCode(): string {
+export function uniqueCode(): string {
   return `T${uniqueSuffix()}`.toUpperCase();
+}
+
+// Grants or revokes Pro. `entitlements` has RLS on with no policies and no DML
+// grant to anon/authenticated, so service_role is the only thing that can write
+// it — which is exactly the Phase 3c checkout function's position.
+export async function setPlan(
+  svc: SupabaseClient,
+  userId: string,
+  plan: "free" | "pro",
+): Promise<void> {
+  const { error } = await svc
+    .from("entitlements")
+    .upsert({ user_id: userId, plan }, { onConflict: "user_id" });
+  if (error) throw error;
 }
 
 // `owner` / `locked` default to the pre-Phase-2 shape (an unowned, open room),
