@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-09-12_
+> _Last reviewed: 2026-09-13_
 
 ---
 
@@ -631,7 +631,9 @@ control. That is what `/auth/return` and `parseOAuthError` exist for — and the
 **Worse than documented, and worth checking on the project:** `enable_manual_linking` is **off by
 default in Supabase**. While it is off, `linkIdentity` fails *synchronously*, so the orphaning path
 isn't an edge case — it is what happens to **every** anonymous organizer who signs in. The local
-stack's flag is now on; production must be checked in the Dashboard.
+stack's flag is now on, and **production was enabled at deploy** (2026-09-13) along with the exact
+`/auth/return` entry in the Dashboard's Redirect URLs — without that entry Supabase falls back to
+`site_url`, so the session would still establish but the claim would never be redeemed.
 
 **Three mechanics that were forced, each measured rather than assumed:**
 
@@ -859,8 +861,14 @@ Track choices here so the "why" isn't lost.
   and is worse: it splits one organizer's rooms across two identities, one of which she can no longer
   sign in as, so she could not even *see* what was left behind. The refusal **raises**, which is what
   leaves the ticket redeemable — she deletes a room and redeems the same nonce, prompted by a banner
-  on `/rooms`. Note this is the *common* path, not an edge: nobody is Pro, so every account caps at 2
-  rooms, and a returning organizer with 2 saved plus 1 anonymous is already over. _(2026-09-12)_
+  on `/rooms`. **How often this fires depends entirely on `enable_manual_linking`.** While it was off
+  (Supabase's default), every anonymous sign-in went through a transfer, and since nobody is Pro —
+  every account caps at 2 rooms — a returning organizer with 2 saved plus 1 anonymous hit the refusal
+  routinely. With it enabled in production on 2026-09-13, `linkIdentity` keeps the user id and no
+  transfer happens at all in the ordinary case; the refusal is now reachable only when the Google
+  account already exists as its own user *and* the rooms don't fit. Rare, but not rare enough to go
+  unhandled — and if that flag is ever turned back off it becomes the common path again.
+  _(2026-09-12, revised 2026-09-13)_
 - [x] **Signing in can make you a stranger to your own locked room** — accepted, with a remedy.
   `readOnly` is computed from `ownerId === user.id`, so an anonymous organizer who locked a room and
   then hit an over-cap refusal can't edit it until the transfer completes, and the identity that could
@@ -922,7 +930,10 @@ Track choices here so the "why" isn't lost.
   query winning, mirroring auth-js's own `parseParametersFromURL`. **And it is worse than documented:**
   `enable_manual_linking` is **off by default in Supabase**, and while it is off `linkIdentity` fails
   *synchronously* — so the orphaning path is not an edge case but what happens to every anonymous
-  organizer who signs in. Local is now on; **production must be checked in the Dashboard.**
+  organizer who signs in. Local is now on, and **production was enabled at deploy** (2026-09-13),
+  together with the exact `https://<domain>/auth/return` entry in the Dashboard's Redirect URLs —
+  without that entry Supabase falls back to `site_url`, so a sign-in would still establish a session
+  but land somewhere that never redeems the claim.
   **Three mechanics were forced, each measured against a deliberately wrong build:** (1) the over-cap
   refusal must **raise**, because the exception is what rolls the claim back and leaves the ticket
   redeemable — the return-based version ate the ticket and reported success-with-zero, stranding the
