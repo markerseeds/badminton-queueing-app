@@ -166,7 +166,19 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# Phase 3b: every sign-in now redirects to the constant `/auth/return`, so the
+# list has to cover a path, not just an origin. The wildcard is what allows it —
+# an exact origin entry does not match a sub-path. Both hosts are listed because
+# `next dev` serves localhost while site_url above says 127.0.0.1, and these are
+# matched as strings rather than resolved. (This previously read `https` against
+# an `http` site_url, matching neither.)
+# NOTE: this file configures the LOCAL stack only. Production must add the exact
+# `https://<domain>/auth/return` in Supabase Dashboard → Authentication → URL
+# Configuration → Redirect URLs.
+additional_redirect_urls = [
+  "http://127.0.0.1:3000/**",
+  "http://localhost:3000/**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -188,8 +200,16 @@ enable_signup = true
 # NOTE: this file configures the LOCAL stack only. Production must enable the
 # same setting in Supabase Dashboard → Authentication → Providers → Anonymous.
 enable_anonymous_sign_ins = true
-# Allow/disallow testing manual linking of accounts
-enable_manual_linking = false
+# Allow/disallow testing manual linking of accounts.
+# Phase 3b: this gates the /user/identities/authorize endpoint `linkIdentity`
+# calls. With it off, linking fails SYNCHRONOUSLY and every anonymous organizer
+# who signs in falls through to a plain sign-in — a different user id — so the
+# rooms-are-orphaned path is not an edge case but the only path.
+# NOTE: this file configures the LOCAL stack only, and the setting is off by
+# default. Production must enable it in Supabase Dashboard → Authentication →
+# Providers → "Allow manual linking", or the claim-ticket fallback runs on every
+# single sign-in rather than only when the Google account already exists.
+enable_manual_linking = true
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
 minimum_password_length = 6
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values

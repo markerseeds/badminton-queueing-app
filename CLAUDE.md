@@ -89,12 +89,12 @@ organizers acting at once serialize instead of clobbering each other (two device
 must fill different courts, not double-book one).
 
 These are `SECURITY INVOKER` **on purpose**: the function runs as the caller, so table RLS still
-applies and ownership rules are inherited for free. Two exceptions are `SECURITY DEFINER`, both
+applies and ownership rules are inherited for free. Three exceptions are `SECURITY DEFINER`, all
 because they write a column no caller may write directly, so each re-checks its own rule in its body:
-`set_room_lock` re-checks **ownership**, while `set_room_name` re-checks **editability**
+`set_room_lock` re-checks **ownership**; `set_room_name` re-checks **editability**
 (`session_is_editable`) — a name is content, open to anyone holding the code, where the lock is a
-security control. `set_room_name` has a second, independent reason to bypass RLS; see the plan-limits
-section below.
+security control; and `transfer_room_ownership` re-checks a **claim ticket** plus the room cap. The
+latter two have a second, independent reason to bypass RLS; see the plan-limits section below.
 
 Single-row writes (add player, set games played, remove from queue, end game) go through PostgREST
 directly and don't need an RPC.
@@ -171,6 +171,23 @@ Postgres also refuses transition tables on a multi-event trigger **and** on a tr
 list (`0A000` both ways). That's why there's no `update of session_id` trigger — the column grant
 covers it instead, at no cost to the hot paths.
 
+**`transfer_room_ownership` is the room cap's second consumer**, because `owned_room_count` is only
+consulted by `sessions_insert` and a transfer is an UPDATE. It derives from the same
+`owned_room_count()` + `plan_limits(account_plan(…))` rather than restating a number — but note the
+off-by-one: the policy asks `count < max` (its own row isn't in yet), the transfer asks
+`count + n <= max`. It refuses all-or-nothing and **raises**, which is what leaves the ticket
+redeemable: the exception rolls the claim back, so the user can delete a room and retry the same
+nonce. Measured — a build that refuses by *returning* eats the ticket silently
+(`tests/rpc/transfer_room_ownership.test.ts`, "leaves the ticket unredeemed").
+
+`enforce_pro_requires_account` on `entitlements` enforces `plan = 'pro' ⇒ is_anonymous = false` with
+**no `service_role` exemption** — the opposite of `enforce_player_limit`, and for the opposite reason:
+that one exempts `service_role` so helpers can seed past a product limit, this one is guarding against
+`service_role` itself, since it holds the only grant on that table and a replayed Phase 3c webhook is
+exactly what could violate the invariant. Exempting nobody is also what frees it to be `SECURITY
+DEFINER` (required, to read `auth.users`): the `current_user`-is-the-owner trap only bites a function
+that needs to know who is calling.
+
 ### Auth: anonymous-on-create only
 
 `ensureUser()` is called from exactly one place — `createSession`. Creating a room signs the organizer
@@ -178,6 +195,27 @@ in anonymously so the room has an owner from the first tap with no sign-up wall;
 upgrades that same user id to Google, so their rooms come with them. **Someone who merely opens a
 shared link stays unauthenticated** — that's deliberate (MAU counts organizers, not players). Don't
 add `ensureUser` calls to join or view paths.
+
+### The identity chain, and the one thing auth-js will not tell you
+
+`linkIdentity` keeps the user id, so rooms follow. When it can't — the Google account already exists
+as its own user, or manual linking is disabled on the project (**Supabase's default**, so check it
+before assuming this path is rare) — the app falls back to a plain sign-in, which is a *different*
+user id. `room_claims` + `transfer_room_ownership` are how the rooms catch up.
+
+**The trap:** `linkIdentity` calls `window.location.assign` and returns `error: null` before the
+provider is consulted. The real refusal is decided after the redirect back, lands on auth-js's
+`initializePromise`, and is awaited-and-discarded by every internal consumer — so it never reaches
+`onAuthStateChange` and never reaches `useAuth`. The **only** surviving evidence is the URL:
+`_getSessionFromURL` clears the fragment on success but throws before that on error. Hence
+[app/lib/authReturn.ts](app/lib/authReturn.ts) and the `/auth/return` route. Parse hash *and* query
+with query winning, exactly as auth-js's own `parseParametersFromURL` does.
+
+Two rules that keep the chain safe: **a ticket is written only immediately before `signInWithOAuth`,
+never before `linkIdentity`** (so a stashed nonce doubles as the "already retried" flag and there's no
+redirect loop); and **if writing the ticket fails, do not sign in** — that discards the identity with
+no way back. Orchestration lives in [useAuth](app/hooks/useAuth.ts), not `auth.ts`, because it needs
+both containment modules and `sessionStore` already imports `auth` (the reverse would be a cycle).
 
 ### Pure logic stays pure
 
@@ -194,13 +232,27 @@ Vercel **production** builds only ([scripts/vercel-migrate.mjs](scripts/vercel-m
 Write every migration to be safely re-runnable (`if not exists`, `drop policy if exists`, `do $$` blocks
 for publication changes) — they get replayed against fresh stacks constantly.
 
-A new table needs three things the local stack won't give you for free:
+A new table needs three things:
 
 1. `replica identity full` — Realtime filters on `session_id`, a non-PK column, and filtered
    UPDATE/DELETE events are matched against the OLD image, which otherwise holds only the PK.
 2. added to the `supabase_realtime` publication.
-3. explicit `grant`s to `anon`/`authenticated`/`service_role` — `supabase start` does not reproduce
-   Supabase's platform default privileges, so without them local and CI have no DML at all.
+3. its grants thought about — see below.
+
+Skip 1 and 2 when nothing subscribes to the table; `entitlements` and `room_claims` both do, each
+saying so in a comment.
+
+**On grants, a new table is born wide open, not locked down.** `pg_default_acl` carries
+`alter default privileges in schema public grant all on tables to anon, authenticated, service_role`
+— verified present on the local stack, so `anon` gets full INSERT/SELECT/UPDATE/DELETE on any table
+you create without writing a single `grant`. (An earlier version of this file claimed the opposite;
+it was measured wrong. `20260706110000_grant_public_table_access.sql` is belt-and-braces, not the
+thing keeping local alive.)
+
+The consequence is sharp: **a narrow column `grant` restricts nothing unless you `revoke` first.**
+`revoke all on <table> from anon, authenticated;` *then* `grant insert (…)`. Phase 2 does this for
+`sessions`, Phase 3b for `room_claims`. Revoking also makes refusals honest — with no grant PostgREST
+raises 42501, where RLS-with-no-policy silently matches zero rows.
 
 ## Tests
 

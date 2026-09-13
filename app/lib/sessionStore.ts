@@ -289,6 +289,37 @@ export async function setRoomName(
   );
 }
 
+// ---------- claim tickets ----------
+// Written immediately before an anonymous identity is discarded by a plain
+// Google sign-in, so the rooms it owns can be moved to whoever signs in.
+//
+// No `.select()`: `room_claims` grants clients INSERT on (nonce, from_user_id)
+// and nothing else — not even SELECT — so asking for the row back would be
+// refused. It costs nothing, because the nonce is generated here (`mintNonce`)
+// and the caller already knows it.
+export async function createClaimTicket(
+  nonce: string,
+  userId: string,
+): Promise<void> {
+  await run(
+    supabase.from("room_claims").insert({ nonce, from_user_id: userId }),
+  );
+}
+
+// Redeems the ticket and returns how many rooms moved. Zero is a normal answer:
+// the ticket names the caller (linking worked after all), or it has already
+// been redeemed by another tab or React's double-effect.
+//
+// Throws 23514 when the rooms would not fit under the caller's plan — and that
+// refusal deliberately leaves the ticket redeemable, so the caller can delete a
+// room and try the same nonce again.
+export async function redeemClaimTicket(nonce: string): Promise<number> {
+  const { data } = await run(
+    supabase.rpc("transfer_room_ownership", { p_nonce: nonce }),
+  );
+  return (data as number | null) ?? 0;
+}
+
 // Owner-only (enforced by the sessions DELETE policy); cascades to players.
 export async function deleteRoom(sessionId: string): Promise<void> {
   const { data, error } = await supabase

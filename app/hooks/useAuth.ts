@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import * as auth from "../lib/auth";
 import type { AuthUser } from "../lib/auth";
+import { mintNonce, writeClaim } from "../lib/claimTicket";
+import { createClaimTicket } from "../lib/sessionStore";
 
 // Current account state. Deliberately read-only about *creating* a user: a room
 // creator is signed in anonymously by `createSession`, not by this hook, so
@@ -38,10 +40,42 @@ export function useAuth() {
     };
   }, []);
 
-  const signInWithGoogle = async (redirectTo?: string) => {
+  // The identity chain starts here. This hook is the only layer allowed to
+  // orchestrate it, because it needs both containment modules and `auth.ts`
+  // cannot import `sessionStore.ts` — sessionStore already imports `ensureUser`
+  // from it, so the dependency would be a cycle.
+  //
+  // `next` is where to land afterwards, defaulting to wherever the user is
+  // standing: hitting a plan gate courtside and being dumped on "My rooms" is
+  // the behaviour this replaces.
+  const signInWithGoogle = async (next?: string) => {
     setError(null);
     try {
-      await auth.signInWithGoogle(redirectTo);
+      writeClaim({
+        next: next ?? `${window.location.pathname}${window.location.search}`,
+      });
+
+      const current = await auth.getUser();
+      if (current?.isAnonymous) {
+        // Best case: the same auth.users row gains a Google identity, the user
+        // id never changes, and the rooms need no moving at all.
+        if (await auth.linkGoogleIdentity()) return;
+
+        // Linking refused outright, so the next call replaces this identity
+        // with a different one. Everything needed to get the rooms back has to
+        // be written first — and if either write fails we must NOT sign in,
+        // because that would discard the identity with no way to reclaim it.
+        const nonce = mintNonce();
+        await createClaimTicket(nonce, current.id);
+        if (!writeClaim({ nonce })) {
+          throw new Error(
+            "This browser won't let the app save anything, so signing in " +
+              "would lose your rooms. Check your privacy settings and retry.",
+          );
+        }
+      }
+
+      await auth.signInWithGoogle();
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Could not sign in. Please try again.",

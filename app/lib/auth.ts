@@ -47,30 +47,44 @@ export async function ensureUser(): Promise<AuthUser> {
   return user;
 }
 
-// Upgrades an anonymous account in place (`linkIdentity` keeps the user id, so
-// rooms they already own stay theirs) or signs in normally when there's no
-// anonymous session to upgrade.
+// Every sign-in comes back to one constant URL, which redeems any claim ticket
+// and then forwards on. One exact entry for Supabase's redirect allow-list, and
+// one place where the messy post-redirect cases live.
+export function authReturnUrl(): string {
+  return `${window.location.origin}/auth/return`;
+}
+
+// Tries to upgrade the current anonymous account in place. `linkIdentity` keeps
+// the same user id, so rooms they already own stay theirs and nothing else is
+// needed.
 //
-// Known gap: if the Google account already exists as a separate user, linking
-// fails and we fall back to a plain sign-in — rooms owned by the discarded
-// anonymous id stay reachable by code but drop off "My rooms".
-export async function signInWithGoogle(redirectTo?: string): Promise<void> {
-  const options = {
-    redirectTo: redirectTo ?? `${window.location.origin}/rooms`,
-  };
+// Returns true if the browser is now navigating to Google. **False means the
+// caller must assume the anonymous identity is about to be discarded** and
+// write a claim ticket before calling `signInWithGoogle` — that happens when
+// manual linking is disabled on the project, which is Supabase's default.
+//
+// The error is swallowed rather than thrown on purpose: every reason linking
+// can refuse synchronously leads to the same recovery, and the *asynchronous*
+// refusal can't be observed here at all. `linkIdentity` calls
+// `window.location.assign` and returns `error: null` before the provider has
+// been consulted; whether the Google account already exists is decided only
+// after it redirects back, and auth-js puts that error on `initializePromise`
+// where every consumer awaits and discards it. That is what `/auth/return`
+// exists to read out of the URL.
+export async function linkGoogleIdentity(): Promise<boolean> {
+  const { error } = await supabase.auth.linkIdentity({
+    provider: "google",
+    options: { redirectTo: authReturnUrl() },
+  });
+  return !error;
+}
 
-  const current = await getUser();
-  if (current?.isAnonymous) {
-    const { error } = await supabase.auth.linkIdentity({
-      provider: "google",
-      options,
-    });
-    if (!error) return;
-  }
-
+// A plain sign-in. This is the call that discards an anonymous identity, so
+// anything that needs to survive it must already be written.
+export async function signInWithGoogle(): Promise<void> {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options,
+    options: { redirectTo: authReturnUrl() },
   });
   if (error) throw error;
 }

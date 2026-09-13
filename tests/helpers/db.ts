@@ -195,6 +195,53 @@ export async function getSession(svc: SupabaseClient, sessionId: string) {
   };
 }
 
+// A Phase 3b claim ticket, seeded through service_role — which is the only way
+// to set `expires_at` or `redeemed_at` at all, since the column grant limits a
+// client to (nonce, from_user_id). A test that seeds an expired ticket is
+// therefore also a demonstration that the grant holds.
+export async function seedClaim(
+  svc: SupabaseClient,
+  fromUserId: string,
+  opts: { nonce?: string; expiresAt?: string; redeemedAt?: string } = {},
+): Promise<string> {
+  const nonce = opts.nonce ?? crypto.randomUUID();
+  const { error } = await svc.from("room_claims").insert({
+    nonce,
+    from_user_id: fromUserId,
+    ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
+    ...(opts.redeemedAt ? { redeemed_at: opts.redeemedAt } : {}),
+  });
+  if (error) throw error;
+  return nonce;
+}
+
+export async function getClaim(svc: SupabaseClient, nonce: string) {
+  const { data, error } = await svc
+    .from("room_claims")
+    .select("*")
+    .eq("nonce", nonce)
+    .maybeSingle();
+  if (error) throw error;
+  return data as {
+    nonce: string;
+    from_user_id: string;
+    expires_at: string;
+    redeemed_at: string | null;
+  } | null;
+}
+
+export async function roomsOwnedBy(
+  svc: SupabaseClient,
+  userId: string,
+): Promise<string[]> {
+  const { data, error } = await svc
+    .from("sessions")
+    .select("id")
+    .eq("owner_id", userId);
+  if (error) throw error;
+  return (data ?? []).map((r) => r.id as string);
+}
+
 // Deleting the session cascades to its players (ON DELETE CASCADE).
 export async function deleteSession(
   svc: SupabaseClient,

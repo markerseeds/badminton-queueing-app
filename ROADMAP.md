@@ -31,8 +31,9 @@ Tailwind CSS 4. _(Migrated off Firebase Firestore 2026-07-04; unused `framer-mot
 `supabase/functions/` in the repo yet. _(Authentication and owner-scoped authorization landed
 2026-08-03 — rooms have owners, RLS is owner-aware, and organizers can lock a room. Google sign-in
 is wired but needs OAuth credentials; see Phase 2. **Entitlements and free-tier limits landed
-2026-09-12** — there is a `plan` per account and the caps are enforced in Postgres; all that's
-missing is a way to pay.)_
+2026-09-12** — there is a `plan` per account and the caps are enforced in Postgres. **The identity
+chain landed 2026-09-12 too** — signing in now carries an organizer's rooms across in every case, and
+Postgres refuses to record Pro against an anonymous account, so all that's missing is a way to pay.)_
 
 **What it does:** One live "room" where an organizer adds players (with a skill level), sets the
 court count, builds a queue, and auto-picks fair, skill-matched groups of 4. It tracks games played,
@@ -77,8 +78,10 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 >
 > **Status (2026-09-12):** **C4 is half closed.** Phase 3a shipped the entitlement layer and the
 > feature gates — there is now a `plan` to hang a purchase on, and free-tier limits enforced in
-> Postgres rather than in the client. What remains is taking the money: checkout, the webhook that
-> writes `plan = 'pro'`, and refunds (Phase 3c).
+> Postgres rather than in the client. Phase 3b then shipped the *identity* to hang it on: an
+> organizer's rooms follow her across a Google sign-in in every case, and Postgres refuses to record
+> Pro against an anonymous account at all. What remains is taking the money: checkout, the webhook
+> that writes `plan = 'pro'`, and refunds (Phase 3c).
 
 ### 🔴 Critical — these block commercialization outright
 
@@ -118,7 +121,7 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 - **Dark-mode bug:** `globals.css` defined dark background vars, but `body` forced black text and cards were `bg-white` — broken in dark mode. **Resolved twice:** Phase 0 took the cheap option and deleted the dark vars; **Phase 2.6 (2026-09-11) built a real dark theme** off design tokens, following the OS.
 - **Accessibility:** emoji-as-icons, low-contrast text, missing `aria-label`s, unlabeled number input — **largely addressed 2026-07-06** (aria labels/roles, dialog semantics, disclosure menu, WCAG-AA contrast); **emoji-as-icons cleared 2026-09-11** (replaced by an inline SVG set), and the skill `<select>` became a labelled radio group. _Remaining before launch:_ full modal focus-trapping / return-focus.
 - **No landing / pricing pages** — **both now exist.** Phase 2.6 gave the landing route a real hero and value proposition; Phase 3a (2026-09-12) added `/pricing`, which reads its own numbers out of `plan_limits()` so it can't advertise a ceiling the server would refuse, and says plainly that Pro isn't purchasable yet. _Remaining:_ screenshots, FAQ, OG tags and a marketing surface beyond those two pages (Phase 4).
-- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** now exist — a vitest suite of pure-logic + local-Supabase RPC/RLS tests runs on every PR via GitHub Actions; 89 tests as of 2026-09-12.)_
+- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** now exist — a vitest suite of pure-logic + local-Supabase RPC/RLS tests runs on every PR via GitHub Actions; 158 tests as of 2026-09-12.)_
 
 **Verification run:** `tsc --noEmit` passes clean; `eslint` reports only the one `useEffect`
 warning (M3); no security-rules file found; no `process.env` usage; `framer-motion` confirmed unused.
@@ -445,7 +448,7 @@ question in §7 asks for — and keeps every piece runnable in the existing CI, 
 would not be.
 
 - **3a — entitlements & server-enforced limits** `✅ 2026-09-12`
-- **3b — the identity chain at the paywall** `⬜`
+- **3b — the identity chain at the paywall** `✅ 2026-09-12`
 - **3c — checkout, webhook & error monitoring** `⬜`
 
 ---
@@ -604,12 +607,77 @@ read this app has never had and belongs with Phase 4's metadata work; and a name
 
 ---
 
-#### Phase 3b — The identity chain at the paywall `⬜`
+#### Phase 3b — The identity chain at the paywall `✅` *(done 2026-09-12)*
 
-Claim tickets, `transfer_room_ownership`, just-in-time sign-in at the gate, and the
-`plan = 'pro' ⇒ is_anonymous = false` invariant. All three are settled in §7 — see _Paying requires
-a real account_, _When the sign-in happens_ and _Rooms follow the sign-in_. Also fixes the known gap
-where linking a Google account that already exists drops rooms off "My rooms".
+**Goal:** an anonymous organizer can sign in with Google at any moment and keep her rooms — including
+when the Google account already exists as its own user. Phase 3c then has a real account to attach a
+purchase to.
+
+**Shipped:** a `room_claims` ticket table, the `transfer_room_ownership` RPC, a single `/auth/return`
+landing route that redeems and recovers, a sign-in affordance at every plan gate, a pending-claim
+banner on `/rooms`, and the `plan = 'pro' ⇒ is_anonymous = false` invariant enforced in Postgres.
+
+**The finding that reshaped the phase: the fallback §7 describes never ran.** `linkIdentity` calls
+`window.location.assign` and returns `error: null` before Google is consulted, so `auth.ts`'s
+`if (!error) return;` always returned and the `signInWithOAuth` fallback below it was dead code. The
+real refusal is decided *after* the redirect back, lands on auth-js's `initializePromise`, and is
+awaited-and-discarded by all ~15 internal consumers — it never reaches `onAuthStateChange` and never
+reached `useAuth`. An organizer hitting this landed on `/rooms`, still anonymous, **with nothing shown
+at all.** The one surviving trace is the URL: `_getSessionFromURL` clears the fragment on success but
+throws before that on error, so `error_code=identity_already_exists` is still readable when we get
+control. That is what `/auth/return` and `parseOAuthError` exist for — and the parser merges hash
+*and* query with query winning, mirroring auth-js's own `parseParametersFromURL`.
+
+**Worse than documented, and worth checking on the project:** `enable_manual_linking` is **off by
+default in Supabase**. While it is off, `linkIdentity` fails *synchronously*, so the orphaning path
+isn't an edge case — it is what happens to **every** anonymous organizer who signs in. The local
+stack's flag is now on; production must be checked in the Dashboard.
+
+**Three mechanics that were forced, each measured rather than assumed:**
+
+1. **The over-cap refusal must raise, not return.** Moving rooms into an account that would exceed
+   `max_rooms` is refused all-or-nothing — and raising is what *guarantees the ticket survives*, since
+   the exception rolls the claim back with everything else. Built the return-based version
+   deliberately: it consumed the ticket and reported success-with-zero, stranding the rooms with no
+   error shown. The claim is also written after the check, so the property doesn't rest on rollback
+   alone.
+2. **`SECURITY DEFINER` for the same two reasons as `set_room_name`, and the second one was
+   isolated.** Granting `owner_id` and running as INVOKER moves a 2-court room fine and refuses a
+   6-court grandfathered one with 42501 — the only difference being the court count, which pins it on
+   `sessions_update`'s with-check carrying the plan cap.
+3. **A replayed ticket returns 0 rather than raising** — React's dev double-effect and a second tab
+   both land there, and raising would show an error after a transfer that actually worked.
+
+**A security bug caught by measurement, and a correction to CLAUDE.md.** The migration originally had
+`grant insert (nonce, from_user_id)` and nothing else, mirroring Phase 2's column-grant idiom — but
+**Supabase's default privileges grant `anon` full DML on every new `public` table**, so the narrow
+grant was purely additive and restricted nothing: a client could set its own `expires_at` and mint a
+permanent standing claim. Phase 2 got this right for `sessions` by *revoking* first; this had skipped
+it. CLAUDE.md claimed the opposite ("`supabase start` does not reproduce Supabase's platform default
+privileges"), which is measurably false — `pg_default_acl` carries them. Now corrected, with the rule
+stated: **a narrow column grant restricts nothing unless you revoke first.** `entitlements` was
+revoked in the same migration — it was protected only by RLS-with-no-policies, not by the absent grant
+Phase 3a's comment claimed.
+
+**TDD'd**: `tests/logic/auth_return.test.ts` (20 cases) written and watched fail before the module
+existed; then 27 DB cases across `tests/rpc/transfer_room_ownership.test.ts`,
+`tests/rls/room_claims.test.ts` and `tests/rls/pro_requires_account.test.ts`, watched fail, with the
+three load-bearing ones re-confirmed against deliberately wrong builds. **158 tests pass**, up from
+111. `tsc` / `eslint` / `next build` clean; the migration re-applied a second time against the same
+database to prove re-runnability. The whole chain and all four refusals were re-verified **over real
+HTTP** with the exact payloads the client sends, as Phase 3a's gates were.
+
+**Not verified: the browser round trip.** Google is disabled on the local stack and there is no
+credential, so the OAuth redirect cannot run locally; the environment is `node` with no DOM, so the
+hook and page have no component tests. The routes serve and compile, and every layer beneath them is
+tested — but the click-through is a production check (see the changelog).
+
+**Deliberately not done:** sweeping discarded anonymous `auth.users` rows and expired tickets (both
+want `pg_cron`, and `supabase/snippets/` is the natural home — 3c); a shared auth context so
+`LimitNote` / `AccountBar` / `RoomClient` stop each mounting their own `useAuth`; and migrating to
+PKCE + `@supabase/ssr` + a server callback route, which was tempting so a server route could redeem
+the ticket, but means cookies, middleware and an SSR client this app has never had — and would breach
+the single-browser-client containment.
 
 ---
 
@@ -634,8 +702,10 @@ where linking a Google account that already exists drops rooms off "My rooms".
   `anon`/`authenticated`. Provider customer ids and receipt data go in their own table with an
   owner-only policy, **not** on `sessions` — `sessions_select` is `using (true)`, so anything stored
   there is world-readable.
-- Assert the **`plan = 'pro' ⇒ is_anonymous = false`** invariant in the function, not only the UI, so
-  a replayed webhook or a hand-made checkout URL can't violate it (needs 3b).
+- The **`plan = 'pro' ⇒ is_anonymous = false`** invariant is already enforced in Postgres by Phase
+  3b's `enforce_pro_requires_account` trigger, with **no `service_role` exemption** — so a replayed
+  webhook or a hand-made checkout URL is refused 23514 by the database, not merely by the function.
+  Assert it in the Edge Function too if you like, but the gate is already there and tested.
 - Handle **restore / verify** across devices and **refunds** (flip back to free).
 - Publish `entitlements` to Realtime, or reload on upgrade — Phase 3a left it unpublished because a
   manual plan change needn't reach an open room live, but a purchase should.
@@ -699,7 +769,7 @@ Pro features are genuinely worth paying for.
 | 2.6 | **UI redesign** _(inserted)_ | Tokens, dark mode, 44px targets — something you can charge for | ~1 wknd | ✅ |
 | 3a | **Entitlements & server-enforced limits** | Something to sell, and gates that hold | ~1 wknd | ✅ |
 | 3a.1 | Room names _(inserted)_ | Tell two rooms apart without decoding a share code | ~0.5 wknd | ✅ |
-| 3b | Identity chain at the paywall | A purchase that survives the browser | ~1 wknd | ⬜ |
+| 3b | Identity chain at the paywall | A purchase that survives the browser | ~1 wknd | ✅ |
 | 3c | Checkout, webhook & error monitoring | Revenue | ~2 wknds | ⬜ |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
@@ -784,6 +854,24 @@ Track choices here so the "why" isn't lost.
   rename break every shared link, and would leak a club's name into a thing people paste around.
   Same reason the name is not in OG/share metadata yet — that needs a server-side read this app has
   never had (Phase 4). _(2026-09-12)_
+- [x] **An over-cap transfer is refused whole, never split.** When the rooms moving across would put
+  the target account over `max_rooms`, none move. A partial transfer was the tempting middle ground
+  and is worse: it splits one organizer's rooms across two identities, one of which she can no longer
+  sign in as, so she could not even *see* what was left behind. The refusal **raises**, which is what
+  leaves the ticket redeemable — she deletes a room and redeems the same nonce, prompted by a banner
+  on `/rooms`. Note this is the *common* path, not an edge: nobody is Pro, so every account caps at 2
+  rooms, and a returning organizer with 2 saved plus 1 anonymous is already over. _(2026-09-12)_
+- [x] **Signing in can make you a stranger to your own locked room** — accepted, with a remedy.
+  `readOnly` is computed from `ownerId === user.id`, so an anonymous organizer who locked a room and
+  then hit an over-cap refusal can't edit it until the transfer completes, and the identity that could
+  unlock it is gone. That is precisely why the `/rooms` banner is mandatory rather than a nicety, and
+  why the over-cap screen is terminal and explicit instead of a redirect that hopes she finds it.
+  _(2026-09-12)_
+- [ ] **Should an over-cap organizer get to choose which rooms to keep?** Open, and worth revisiting
+  once there is usage: the all-or-nothing refusal above is the right default, but if it turns out to
+  be the *usual* outcome rather than an occasional one, picking two of three rooms beats deleting one
+  to make space. Deliberately not built now — it needs a room-picker UI at the worst possible moment,
+  courtside and mid-sign-in. _(raised 2026-09-12)_
 - [ ] **Price point** — the one-time number + whether to run a founder's price.
 - [x] **Roles (Phase 1)** — shared-code users can **fully edit** (capability-URL model); a room's
   only gate is its unguessable code. Revisit view-only / owner-only roles in Phase 2. _(2026-07-04)_
@@ -818,6 +906,58 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-09-12** — **Phase 3b: the identity chain at the paywall.** An anonymous organizer can now
+  sign in with Google and keep her rooms in every case, including the one that used to lose them
+  silently. New `room_claims` ticket table, a `transfer_room_ownership` RPC, a single `/auth/return`
+  landing route, a sign-in affordance at every plan gate, a pending-claim banner on `/rooms`, and
+  `plan = 'pro' ⇒ is_anonymous = false` enforced in Postgres rather than only in the checkout function
+  3c will write. **The fallback §7 has described since August never actually ran.** `linkIdentity`
+  calls `window.location.assign` and returns `error: null` before Google is consulted, so `auth.ts`'s
+  `if (!error) return;` always returned and the `signInWithOAuth` fallback under it was dead code —
+  the real refusal is decided after the redirect back, lands on auth-js's `initializePromise`, and is
+  awaited-and-discarded by every internal consumer, so it never reached `onAuthStateChange` or
+  `useAuth`. Someone hitting it landed on `/rooms`, still anonymous, **with nothing shown at all**.
+  The one surviving trace is the URL: `_getSessionFromURL` clears the fragment on success but throws
+  before that on error. Hence the new route and `parseOAuthError`, which merges hash *and* query with
+  query winning, mirroring auth-js's own `parseParametersFromURL`. **And it is worse than documented:**
+  `enable_manual_linking` is **off by default in Supabase**, and while it is off `linkIdentity` fails
+  *synchronously* — so the orphaning path is not an edge case but what happens to every anonymous
+  organizer who signs in. Local is now on; **production must be checked in the Dashboard.**
+  **Three mechanics were forced, each measured against a deliberately wrong build:** (1) the over-cap
+  refusal must **raise**, because the exception is what rolls the claim back and leaves the ticket
+  redeemable — the return-based version ate the ticket and reported success-with-zero, stranding the
+  rooms with no error shown; (2) `SECURITY DEFINER` for the same two reasons as `set_room_name`, and
+  the second was *isolated* — granting `owner_id` and running as INVOKER moves a 2-court room fine and
+  refuses a 6-court grandfathered one with 42501, the only difference being the court count; (3) a
+  replayed ticket returns 0 rather than raising, since React's dev double-effect and a second tab both
+  land there. **A security bug caught by measurement, and a correction to CLAUDE.md:** the migration
+  first carried `grant insert (nonce, from_user_id)` and nothing else, copying Phase 2's column-grant
+  idiom — but Supabase's `pg_default_acl` grants `anon` **full DML on every new `public` table**, so
+  the narrow grant restricted nothing and a client could set its own `expires_at`, minting a permanent
+  standing claim on an identity's rooms. Phase 2 got this right for `sessions` by *revoking* first;
+  this had skipped it. CLAUDE.md asserted the opposite ("`supabase start` does not reproduce
+  Supabase's platform default privileges") and was measurably wrong; it now carries the rule that **a
+  narrow column grant restricts nothing unless you revoke first**. `entitlements` was revoked in the
+  same migration — Phase 3a's comment claimed it had "no DML grant to anon/authenticated at all" when
+  in fact only RLS-with-no-policies was protecting it. **TDD'd**: 20 pure cases in
+  `tests/logic/auth_return.test.ts` written and watched fail before the module existed, then 27 DB
+  cases across `transfer_room_ownership` / `room_claims` / `pro_requires_account`. **158 tests pass**,
+  up from 111; `tsc` / `eslint` / `next build` clean; the migration re-applied a second time against
+  the same database; and the whole chain plus all four refusals re-verified **over real HTTP** with
+  the exact payloads the client sends, the way Phase 3a's gates were. New: `app/auth/return/page.tsx`,
+  `app/hooks/useAuthReturn.ts`, `app/lib/authReturn.ts`, `app/lib/claimTicket.ts`,
+  `supabase/migrations/20260912180000_phase3b_identity_chain.sql`. The gate affordance went into
+  `LimitNote` alone rather than into `CourtBoard`/`PlayerList`/`BatchAddModal` — all four gates
+  already funnel through it, so the branch can't drift and no props thread through three components.
+  **Not verified: the browser round trip** — Google is disabled on the local stack with no credential,
+  so the OAuth redirect can't run locally, and the vitest environment is `node` with no DOM. Every
+  layer beneath the hook is tested and all four routes compile and serve, but the click-through is a
+  production check: sign in from a room with a Google account that already exists, confirm the rooms
+  move; then repeat against an account already holding 2 rooms, confirm the over-cap screen, delete a
+  room and confirm **Move them now** finishes with the same nonce. **Deliberately not done:** sweeping
+  discarded anonymous `auth.users` rows and expired tickets (both want `pg_cron`; `supabase/snippets/`
+  is the natural home — 3c), a shared auth context, and PKCE + `@supabase/ssr` + a server callback
+  route, which would breach the single-browser-client containment.
 - **2026-09-12** — **Room names (inserted after Phase 3a).** A room can now be named, and the name
   shows in the three places a room is identified: the header (with a pencil beside it), the `/rooms`
   rows, and the browser tab. A code from an unambiguous alphabet is unguessable by design and so

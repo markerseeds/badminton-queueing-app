@@ -8,8 +8,14 @@ import { LockIcon, MoreIcon, TrashIcon, WarningIcon } from "../components/icons"
 import { LimitNote } from "../components/LimitNote";
 import { Button, IconButton } from "../components/ui";
 import { useAuth } from "../hooks/useAuth";
+import { clearClaim, readClaim } from "../lib/claimTicket";
 import { cn } from "../lib/cn";
-import { deleteRoom, getMyLimits, listMyRooms } from "../lib/sessionStore";
+import {
+  deleteRoom,
+  getMyLimits,
+  listMyRooms,
+  redeemClaimTicket,
+} from "../lib/sessionStore";
 import type { AccountLimits, RoomSummary } from "../lib/types";
 
 function formatDate(iso: string): string {
@@ -54,6 +60,17 @@ export default function MyRoomsPage() {
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RoomSummary | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  // A claim ticket this browser wrote but never got to redeem — because the
+  // move would have put this account over its room cap, or because the tab was
+  // closed mid-flow. This page is the recovery surface for both: it is the one
+  // place you can make space, and the rooms are invisible until it runs.
+  const [pendingClaim, setPendingClaim] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingClaim(readClaim().nonce ?? null);
+  }, [user]);
 
   // Latest loader, so deleting a room can refresh the list without re-running
   // the effect — the same shape `useSession` uses for its post-write reload.
@@ -103,6 +120,26 @@ export default function MyRoomsPage() {
     }
   };
 
+  const moveRoomsHere = async () => {
+    if (!pendingClaim) return;
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      const moved = await redeemClaimTicket(pendingClaim);
+      // Only clear on success. A 23514 refusal deliberately leaves the ticket
+      // redeemable, which is the whole point of this banner.
+      clearClaim();
+      setPendingClaim(null);
+      if (moved > 0) await reloadRef.current();
+    } catch (e) {
+      setClaimError(
+        e instanceof Error ? e.message : "Could not move those rooms.",
+      );
+    } finally {
+      setClaiming(false);
+    }
+  };
+
   const atRoomCap =
     limits !== null && rooms !== null && rooms.length >= limits.maxRooms;
 
@@ -132,8 +169,35 @@ export default function MyRoomsPage() {
         {atRoomCap && (
           <LimitNote>
             {rooms!.length} of {limits!.maxRooms} rooms used on the free plan.
-            Delete one to make space, or
+            Delete one to make space.
           </LimitNote>
+        )}
+
+        {/* Only for a real account: an anonymous user has nothing to move rooms
+            *to*, and the ticket names the identity they are still signed in as. */}
+        {pendingClaim && isSignedIn && (
+          <div className="banner banner-warn flex-col items-stretch sm:flex-row sm:items-start">
+            <div className="flex flex-1 items-start gap-2.5">
+              <WarningIcon size={18} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">
+                  Rooms from this browser are waiting to move here
+                </p>
+                <p className="mt-1 text-[0.8125rem] opacity-90">
+                  {claimError ??
+                    "They were created before you signed in, so they still belong to the anonymous account this browser had."}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={moveRoomsHere}
+              disabled={claiming}
+              className="shrink-0"
+            >
+              {claiming ? "Moving…" : "Move them now"}
+            </Button>
+          </div>
         )}
 
         {error && (
