@@ -6,6 +6,8 @@ queue. The app auto-picks fair, skill-matched groups of four — fewest games
 played first, kept within one skill band — and syncs live across every device
 looking at the same room.
 
+https://badminton-queueing-app.vercel.app/
+
 ## Features
 
 - **Auto-pick** balanced groups of four (fewest games first, one skill band).
