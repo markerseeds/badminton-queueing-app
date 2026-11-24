@@ -7,7 +7,7 @@
 > **Backend:** **migrated** from Firebase Firestore → **Supabase** (Postgres + Auth + Realtime
 > + Row-Level Security). _Decision 2026-07-03 · migration shipped 2026-07-04._
 >
-> _Last reviewed: 2026-09-13_
+> _Last reviewed: 2026-11-24_
 
 ---
 
@@ -27,8 +27,9 @@ Don't try to do it all at once. **Phases 0–2 are the ones that actually block 
 **Current stack:** Next.js 16, React 19, **Supabase** (Postgres + Realtime + Row-Level Security),
 Tailwind CSS 4. _(Migrated off Firebase Firestore 2026-07-04; unused `framer-motion` removed.)_
 
-**Still to come on Supabase:** checkout via Edge Functions (Phase 3c) — there is no
-`supabase/functions/` in the repo yet. _(Authentication and owner-scoped authorization landed
+**Checkout via Edge Functions landed 2026-11-24 (Phase 3c)** — `supabase/functions/` now holds the
+Paddle webhook, checkout and "Verify purchase", and Pro is derived from purchases in Postgres. It goes
+live once the owner's Paddle account is set up and approved; see Phase 3c. _(Authentication and owner-scoped authorization landed
 2026-08-03 — rooms have owners, RLS is owner-aware, and organizers can lock a room. Google sign-in
 is wired but needs OAuth credentials; see Phase 2. **Entitlements and free-tier limits landed
 2026-09-12** — there is a `plan` per account and the caps are enforced in Postgres. **The identity
@@ -82,6 +83,10 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 > organizer's rooms follow her across a Google sign-in in every case, and Postgres refuses to record
 > Pro against an anonymous account at all. What remains is taking the money: checkout, the webhook
 > that writes `plan = 'pro'`, and refunds (Phase 3c).
+>
+> **Status (2026-11-24):** **C4 is closed in code.** Phase 3c shipped a server-created Paddle checkout,
+> a signed webhook, refunds and chargebacks, and error monitoring on the functions that take money.
+> What's left is the owner's side: the Paddle account, keys, and the sandbox run (see Phase 3c).
 
 ### 🔴 Critical — these block commercialization outright
 
@@ -121,7 +126,7 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 - **Dark-mode bug:** `globals.css` defined dark background vars, but `body` forced black text and cards were `bg-white` — broken in dark mode. **Resolved twice:** Phase 0 took the cheap option and deleted the dark vars; **Phase 2.6 (2026-09-11) built a real dark theme** off design tokens, following the OS.
 - **Accessibility:** emoji-as-icons, low-contrast text, missing `aria-label`s, unlabeled number input — **largely addressed 2026-07-06** (aria labels/roles, dialog semantics, disclosure menu, WCAG-AA contrast); **emoji-as-icons cleared 2026-09-11** (replaced by an inline SVG set), and the skill `<select>` became a labelled radio group. _Remaining before launch:_ full modal focus-trapping / return-focus.
 - **No landing / pricing pages** — **both now exist.** Phase 2.6 gave the landing route a real hero and value proposition; Phase 3a (2026-09-12) added `/pricing`, which reads its own numbers out of `plan_limits()` so it can't advertise a ceiling the server would refuse, and says plainly that Pro isn't purchasable yet. _Remaining:_ screenshots, FAQ, OG tags and a marketing surface beyond those two pages (Phase 4).
-- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** now exist — a vitest suite of pure-logic + local-Supabase RPC/RLS tests runs on every PR via GitHub Actions; 158 tests as of 2026-09-12.)_
+- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** exist — a vitest suite of pure-logic, local-Supabase RPC/RLS and Edge Function HTTP tests, 279 as of 2026-11-24. **Correction:** the GitHub Actions workflow added on 2026-07-06 never passed once until 2026-11-24 — it handed the tests a quoted `API_URL` — so every earlier count here was measured locally only.)_
 
 **Verification run:** `tsc --noEmit` passes clean; `eslint` reports only the one `useEffect`
 warning (M3); no security-rules file found; no `process.env` usage; `framer-motion` confirmed unused.
@@ -190,8 +195,10 @@ account.** Treat the number as a hypothesis to test.
 
 ### Payment mechanics (Supabase-native)
 
-- **Recommended: a merchant-of-record** — **Lemon Squeezy** or **Paddle** — so global sales tax /
-  VAT is handled for you (a real burden lifted off a solo developer).
+- **Chosen: Paddle, as merchant-of-record** _(2026-11-24)_ — global sales tax / VAT handled for you
+  (a real burden lifted off a solo developer). Lemon Squeezy closed to new sellers on 2026-11-16 and
+  shuts down on 2027-03-31; Stripe, including Stripe Managed Payments, doesn't accept businesses
+  based in the Philippines. See §7.
 - **Alternative:** **Stripe Checkout** (one-time mode) — more control, but you own tax compliance.
 - **Flow:** checkout succeeds → provider webhook hits a **Supabase Edge Function** → the function
   (using the service-role key) sets `plan: "pro"` on the user's row / `entitlements` table → the
@@ -449,7 +456,7 @@ would not be.
 
 - **3a — entitlements & server-enforced limits** `✅ 2026-09-12`
 - **3b — the identity chain at the paywall** `✅ 2026-09-12`
-- **3c — checkout, webhook & error monitoring** `⬜`
+- **3c — checkout, webhook & error monitoring** `🟨 built 2026-11-24, sandbox check pending`
 
 ---
 
@@ -683,7 +690,7 @@ the single-browser-client containment.
 
 ---
 
-#### Phase 3c — Checkout, webhook & error monitoring `⬜`
+#### Phase 3c — Checkout, webhook & error monitoring `🟨` *(built 2026-11-24 — sandbox verification waits on the owner's Paddle keys)*
 
 **Before starting.** Two structural things are easy to get wrong and cheaper to settle first:
 
@@ -715,7 +722,87 @@ the single-browser-client containment.
   affordances at each gate already exist).
 
 **Done when:** a test purchase flips the account to Pro and unlocks features; the entitlement
-survives refresh and works across devices; a replayed webhook is a no-op.
+survives refresh and works across devices; a replayed webhook is a no-op. _(Added at planning: a
+failing webhook alerts the owner before a customer has to.)_
+
+**🟨 Built (2026-11-24); the sandbox run is the owner's next step.** Provider: **Paddle** (see §7 for
+why). What shipped:
+
+- **`purchases`** (one row per Paddle transaction, owner-readable, unwritable by clients),
+  **`webhook_events`** (every verified delivery, raw, service_role only) and
+  **`apply_paddle_event(p_event, p_price_id)`**, the single path from any Paddle event to a plan.
+- **Pro is derived, not toggled**: `pro` whenever the account holds a completed, unrefunded purchase,
+  recomputed after every event. Out-of-order delivery, buying twice and partial refunds therefore
+  need no special cases.
+- Three Edge Functions:
+  - **`paddle-webhook`** (signature-verified, `verify_jwt = false`);
+  - **`create-checkout`**, which refuses anonymous and already-Pro accounts *before* anyone pays,
+    and records the transaction as pending;
+  - **`sync-purchase`** ("Verify purchase"), which feeds Paddle's own view of a pending transaction
+    through the same function.
+- **Sentry** on those functions, and the production build now deploys them after `db push`.
+- **`/pricing` sells Pro**: a localized price from Paddle.js, a server-created checkout, then a
+  ~30 s poll of `my_limits()` and a fallback "payment received, Pro is on its way". There are draft
+  **`/terms`, `/privacy` and `/refunds`** pages for Paddle's site review.
+
+**The rules that make a webhook safe** (each one tested):
+
+1. **Duplicates.** The event id is the dedupe key, so a redelivery changes only an attempt counter,
+   and two copies arriving at once queue on one row.
+2. **Failures stay retryable.** A failure keeps the payload and the error but leaves the event
+   *unprocessed*, so Paddle's retry runs it again.
+3. **Ordering.** An event older than its purchase's `last_event_at` is stale. A refund for a
+   transaction never seen therefore *fails* and succeeds on retry, rather than being ignored.
+4. **Buying twice.** create-checkout reconciles pending purchases with Paddle before starting
+   another, so a lost webhook can't become a double charge.
+
+**Open rooms update with no new subscription.** The transaction that changes a plan touches the
+owner's rooms, and every device already watching `sessions` reloads its limits. That includes the
+courtside tablet, which could never have read `entitlements`.
+
+**Measured along the way:**
+
+- **CI had never passed.** All 21 runs since 2026-07-06 failed with a quoted `API_URL`; fixed first,
+  in its own PR.
+- **Supabase's default privileges** still grant new tables and functions to the API roles on CLI
+  3.3.0. CLAUDE.md was right; `config.toml`'s comment was stale.
+- **Supabase CLI 3.x** deprecates `db push --db-url` (4.x removes it), so the deploy script now pins
+  the CLI to CI's version.
+- **Deno 2.9** refuses packages published under 24 h ago.
+- **The first production deploy after the CI fix failed**, because the production Supabase project
+  had been paused or removed: its hostname returned NXDOMAIN, so `db push` couldn't connect. The
+  live app can't reach its database either until it's back. The owner is restoring it.
+
+**TDD'd.** **279 tests pass**, up from 158. The new ones:
+
+- 23 DB tests: `apply_paddle_event` and `purchases` RLS;
+- 18 for signatures and event parsing;
+- 39 for the function handlers;
+- 11 over real HTTP against the local gateway and edge runtime;
+- 9 for the deploy script;
+- 21 for the buyer-side logic.
+
+The caller-refusal test first passed *for the wrong reason*, so it was tightened and re-proven against
+a deliberately re-granted build (see CLAUDE.md). `tsc` / `eslint` / `next build` / `deno check` are
+clean, the migration was applied twice, and CI is green on both PRs, with the HTTP suite running there
+too.
+
+**Not verified until the owner's Paddle sandbox keys exist:**
+
+- the real checkout overlay;
+- a real webhook signature;
+- a sandbox refund;
+- Sentry receiving an event;
+- the browser side of `/pricing`. Vitest runs in `node` with no DOM, so the hook and page have no
+  component tests, though the sequence they run does.
+
+**Deliberately not done:**
+
+- sweeping old anonymous users and expired claim tickets. Deleting an anonymous owner leaves ownerless
+  rooms, which resolve to Pro, so a careless sweep would hand out Pro. That needs its own change.
+- a scheduled job that checks pending purchases. Verify purchase and the alerts cover it.
+- a Paddle customer portal, and subscriptions.
+- app-wide Sentry, which stays in Phase 5.
 
 **Effort:** ~2 weekends (3a took the gates off the top).
 
@@ -772,7 +859,7 @@ Pro features are genuinely worth paying for.
 | 3a | **Entitlements & server-enforced limits** | Something to sell, and gates that hold | ~1 wknd | ✅ |
 | 3a.1 | Room names _(inserted)_ | Tell two rooms apart without decoding a share code | ~0.5 wknd | ✅ |
 | 3b | Identity chain at the paywall | A purchase that survives the browser | ~1 wknd | ✅ |
-| 3c | Checkout, webhook & error monitoring | Revenue | ~2 wknds | ⬜ |
+| 3c | Checkout, webhook & error monitoring | Revenue | ~2 wknds | 🟨 |
 | 4 | Professional polish | Trust + Pro value | ~4–6 wknds | ⬜ |
 | 5 | Launch & iterate | Users + learning | ongoing | ⬜ |
 
@@ -796,7 +883,48 @@ Pro features are genuinely worth paying for.
 Track choices here so the "why" isn't lost.
 
 - [x] **Database / backend** — ✅ **Supabase** (Postgres + Auth + Realtime + RLS), replacing Firestore. _(2026-07-03)_
-- [ ] **Payment provider** — merchant-of-record (Lemon Squeezy/Paddle) vs Stripe? _(leaning MoR for tax simplicity; webhook runs on Supabase Edge Functions either way)_
+- [x] **Payment provider — Paddle**, as merchant of record, so global sales tax and VAT are Paddle's
+  problem rather than a solo developer's. Each alternative closed itself:
+  - Lemon Squeezy closed to new sellers on 2026-11-16 and shuts down on 2027-03-31.
+  - Stripe, Stripe Managed Payments included, doesn't accept businesses based in the Philippines.
+
+  Paddle does, and it has a sandbox. _(2026-11-24)_
+- [x] **The checkout is created by the server, not the browser.** `create-checkout` refuses
+  anonymous and already-Pro accounts *before* anyone pays, and records the Paddle transaction as a
+  pending purchase so a missed webhook can be recovered ("Verify purchase"). It also checks pending
+  purchases with Paddle before starting another, so a late webhook can't turn into a double charge.
+  The browser only ever holds a transaction id. Paddle.js shows the price but never decides what is
+  sold. _(2026-11-24)_
+- [x] **Pro is derived from purchases, never switched on and off.** `plan = 'pro'` exactly when the
+  account holds a completed, unrefunded purchase, recomputed after every event. Out-of-order
+  delivery, buying twice and partial refunds then need no special cases. A plan set by hand is
+  overwritten by the next event for that account. _(2026-11-24)_
+- [x] **Refund policy:**
+  - An approved full refund, or a chargeback, turns Pro off.
+  - A partial refund doesn't.
+  - A chargeback the seller wins (`chargeback_reverse`) turns Pro back on.
+  - A refund still pending approval changes nothing.
+
+  Enforced in one condition inside `apply_paddle_event`. _(2026-11-24)_
+- [ ] **Should a `chargeback_warning` turn Pro off?** Open. Paddle raises one on an early fraud
+  warning and **refunds the buyer automatically**. The approved policy doesn't mention it, so it is
+  built as *ignored*, and such a buyer keeps Pro. Treating it like a chargeback is a one-line change.
+  _(raised 2026-11-24)_
+- [x] **Nothing is taken back from rooms after a refund.** The account goes back to free, but rooms
+  above the free caps keep their courts until someone changes them. This is the same grandfathering
+  3a applies everywhere. Accepted cost: a small refund-abuse window, chosen over cutting a club's
+  courts mid-night. _(2026-11-24)_
+- [x] **Open rooms learn about a plan change by being touched, not by publishing
+  `entitlements`.** The transaction that changes a plan bumps `updated_at` on the owner's rooms.
+  Every device already subscribed to `sessions` reloads its limits, including the courtside tablet,
+  which isn't the owner and could never read `entitlements`. The buyer's own page polls
+  `my_limits()` once Paddle reports the checkout complete. _(2026-11-24)_
+- [x] **Error monitoring is Sentry in the Edge Functions only**, because that's where a failure
+  costs a customer money. `webhook_events` keeps every raw payload alongside. App-wide monitoring
+  stays in Phase 5. _(2026-11-24)_
+- [x] **Testing before go-live runs on the production Supabase project, connected to Paddle's
+  sandbox.** Test purchases are refunded or removed afterwards so nobody stays Pro, in keeping with
+  3a's nobody-is-grandfathered decision. _(2026-11-24)_
 - [x] **Auth method** — **Google first**, email magic-link later. Magic links break on phones (the
   link opens in the mail app's in-app browser, so the session lands in the wrong one) and this is a
   phone-first courtside tool. Supabase links identities by email, so adding email later is additive.
@@ -914,6 +1042,61 @@ Track choices here so the "why" isn't lost.
 
 ## Changelog
 
+- **2026-11-24** — **Phase 3c: Pro is on sale, through Paddle** (built; the sandbox run waits on the
+  owner's keys). What shipped:
+  - a server-created checkout;
+  - a signature-verified webhook that applies every event through one SQL function,
+    `apply_paddle_event`;
+  - Pro **derived from purchases** rather than toggled;
+  - refunds and chargebacks;
+  - "Verify purchase" for a webhook that never arrived;
+  - Sentry on the three Edge Functions;
+  - a production build that deploys them after `db push`;
+  - `/pricing` selling Pro at Paddle's localized price;
+  - draft `/terms`, `/privacy` and `/refunds` for Paddle's site review.
+
+  **The webhook's safety rules, each tested:**
+  - a redelivery is a no-op (dedupe on the event id);
+  - a failure keeps the payload and error but stays unprocessed, so the retry runs it again;
+  - an event older than its purchase's last one is stale;
+  - a refund for a transaction never seen *fails*, so the retry succeeds once
+    `transaction.completed` lands.
+
+  Open rooms update by having their `updated_at` touched in the same transaction, so the
+  courtside tablet picks up a purchase without `entitlements` ever being published.
+
+  **Step 0, its own PR: CI passed for the first time ever.** All 21 runs since 2026-07-06 had failed.
+  The workflow appended `supabase status -o env` to `$GITHUB_ENV`, which keeps the CLI's quotes, so
+  every DB test file received `"http://127.0.0.1:55321"` with the quote marks included. The CLI is
+  now pinned to 3.3.0, Node is 22, and `.env.test` is written exactly as a local run writes it.
+  `pg_default_acl` was re-measured on that CLI: new tables and functions are still born granted to
+  the API roles. CLAUDE.md was right; `config.toml`'s comment was the stale one.
+
+  **Other findings:**
+  - CLI 3.x deprecates `db push --db-url` and 4.x removes it, so the deploy script now pins the same
+    CLI as CI, and a test enforces the match.
+  - Deno 2.9 refuses packages younger than 24 h.
+  - The first production deploy after the CI fix **failed** because the production Supabase project
+    had been paused or removed (NXDOMAIN). The owner is restoring it.
+
+  **TDD'd:** 279 tests, up from 158, including 11 over real HTTP against the local edge runtime, and
+  all of them run in CI. `tsc` / `eslint` / `next build` / `deno check` are clean, and the
+  migration was applied twice.
+
+  **Not verified:** the real Paddle round trip, and the browser side of `/pricing` (there is no DOM
+  test environment). Both are the sandbox check.
+
+  New files:
+  - `supabase/migrations/20261124112531_phase3c_purchases.sql`
+  - `supabase/functions/*`
+  - `app/lib/paddle.ts`, `app/lib/purchase.ts`, `app/lib/functionError.ts`, `app/lib/legal.ts`
+  - `app/hooks/usePurchase.ts`
+  - `app/components/SiteFooter.tsx`, `app/components/LegalPage.tsx`
+  - `app/{terms,privacy,refunds}/page.tsx`
+
+  **Deliberately not done:** sweeping old anonymous users (ownerless rooms resolve to Pro, so a
+  careless sweep hands out Pro), a scheduled pending-purchase check, a customer portal, and
+  subscriptions.
 - **2026-09-12** — **Phase 3b: the identity chain at the paywall.** An anonymous organizer can now
   sign in with Google and keep her rooms in every case, including the one that used to lose them
   silently. New `room_claims` ticket table, a `transfer_room_ownership` RPC, a single `/auth/return`
