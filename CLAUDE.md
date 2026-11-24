@@ -39,7 +39,12 @@ npx vitest run -t "lets a stranger add, queue and delete players"
 ```
 
 Only `tests/logic/` and `tests/lib/` run without the local stack; `tests/rpc/` and `tests/rls/` need it.
-CI ([.github/workflows/test.yml](.github/workflows/test.yml)) boots the stack and exports the env vars itself.
+CI ([.github/workflows/test.yml](.github/workflows/test.yml)) boots the stack on a **pinned** CLI
+(3.3.0) and writes `.env.test` with the same `supabase status -o env > .env.test` a local run uses.
+It used to append that output to `$GITHUB_ENV` instead, which keeps the CLI's quotes — `API_URL`
+arrived as `"http://127.0.0.1:55321"`, quote marks included, supabase-js refused it in every DB test
+file, and no CI run passed until 2026-11-24. Locally `npx supabase` resolves to the *latest* CLI, so
+when CI fails and local doesn't, compare `npx supabase --version` with the pin first.
 
 The local stack listens on **55321–55329**, not the CLI's default 54321–54329, so it can run
 alongside another local Supabase project (only one stack can own a port, and every project gets the
@@ -248,6 +253,21 @@ saying so in a comment.
 you create without writing a single `grant`. (An earlier version of this file claimed the opposite;
 it was measured wrong. `20260706110000_grant_public_table_access.sql` is belt-and-braces, not the
 thing keeping local alive.)
+
+**Re-measured 2026-11-24 on the CI-pinned CLI 3.3.0** (Postgres image `17.12.0.002`, fresh
+`db reset`), by creating a probe table and function inside a rolled-back transaction: the table got
+`arwdDxtm` for anon, authenticated and service_role; the function got EXECUTE for **PUBLIC, anon,
+authenticated and service_role**. `supabase/config.toml` had carried an older CLI's comment saying
+the opposite (unset `auto_expose_new_tables` = not exposed, permanently from 2026-10-30); the 3.3.0
+template says unset = exposed, and that is what measures. Production's default can't be measured
+from here, and two CLI releases have described the cloud default in opposite ways, so **write every
+migration to hold under either default**: revoke what a role must not have, and grant explicitly what it
+needs — `service_role` included.
+
+Functions carry one more trap: EXECUTE goes to PUBLIC *and* to anon/authenticated by name, so
+`revoke execute … from public` alone still leaves anon able to call it. A function only the service
+role may call needs `revoke execute on function … from public, anon, authenticated;` then
+`grant execute … to service_role;`.
 
 The consequence is sharp: **a narrow column `grant` restricts nothing unless you `revoke` first.**
 `revoke all on <table> from anon, authenticated;` *then* `grant insert (…)`. Phase 2 does this for

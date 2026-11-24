@@ -7,8 +7,9 @@ project_id = "badminton-queueing-app"
 # Local ports are shifted off the CLI's 5432x defaults to the 5532x range so this
 # stack can run alongside another local Supabase project on the same machine —
 # only one stack can own a given port, and the default range is the one every
-# project gets. Local only: CI boots its own stack and never reads these, and
-# production is unaffected. Regenerate .env.test after changing them.
+# project gets. CI reads them too (its stack listens on 55321 as well), which is
+# harmless there since a runner never hosts a second stack; production is
+# unaffected. Regenerate .env.test after changing them.
 
 [api]
 enabled = true
@@ -24,9 +25,16 @@ extra_search_path = ["public", "extensions"]
 max_rows = 1000
 # Controls whether new tables, views, sequences and functions created in the `public` schema by
 # `postgres` are reachable through the Data API roles (`anon`, `authenticated`, `service_role`)
-# without explicit GRANTs. When unset, new entities are NOT auto-exposed, matching the new cloud
-# default. Set to `true` to keep the legacy behaviour of auto-exposing new entities; this is
-# deprecated and the field is removed on 2026-10-30 once the always-revoked behaviour is permanent.
+# without explicit GRANTs, matching the cloud default. Set to `false` to require explicit GRANTs
+# instead. Left unset, a fresh project falls back to `true`.
+#
+# That is the CLI 3.3.0 wording, and it is the opposite of what this comment used to say (an older
+# CLI's template announced that unset would mean NOT exposed, permanently from 2026-10-30). The
+# newer wording is the measured one: on CLI 3.3.0, with this left unset, a table created by a
+# migration gets full DML for anon/authenticated/service_role and a function gets EXECUTE for
+# PUBLIC, anon, authenticated and service_role (measured 2026-11-24; see CLAUDE.md, "On grants").
+# Production's default isn't measurable from here, so migrations state their grants both ways —
+# revoke what a role must not have, grant what it needs — and work under either setting.
 # auto_expose_new_tables = true
 
 [api.tls]

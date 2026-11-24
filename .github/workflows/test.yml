@@ -11,26 +11,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22, not 20: supabase-js warns that Node 20 and below are deprecated, and
+      # 22 is what the app is developed and built against locally.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      # Pinned rather than `latest`, so a CLI release can't change the stack the
+      # suite runs against between two pushes of the same commit — a new CLI
+      # brings new Postgres, GoTrue and PostgREST images with it. Bump it on
+      # purpose, together with a green run. `pg_default_acl` was measured on this
+      # version (see CLAUDE.md, "On grants").
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.3.0
 
       # Boots a full local stack in Docker and applies supabase/migrations/*.
       - name: Start Supabase
         run: supabase start
 
-      # Exposes API_URL / ANON_KEY / SERVICE_ROLE_KEY (and more) to later steps.
-      - name: Export Supabase env
-        run: supabase status -o env >> "$GITHUB_ENV"
+      # Written to the file tests/setup.ts loads — the same command as a local
+      # run — and NOT appended to $GITHUB_ENV. The CLI quotes every value, and
+      # GitHub's env file takes everything after `=` literally, so the quotes
+      # became part of the value: API_URL arrived as "http://127.0.0.1:55321"
+      # with the quote marks, supabase-js threw "Invalid supabaseUrl" in every
+      # DB test file, and no run of this workflow had ever passed. dotenv strips
+      # the quotes.
+      - name: Write Supabase env for the tests
+        run: supabase status -o env > .env.test
 
       - name: Run tests
         run: npm test
