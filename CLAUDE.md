@@ -38,7 +38,28 @@ npx vitest run tests/rpc/start_game.test.ts
 npx vitest run -t "lets a stranger add, queue and delete players"
 ```
 
-Only `tests/logic/` and `tests/lib/` run without the local stack; `tests/rpc/` and `tests/rls/` need it.
+Edge Functions (Deno — see "Edge Functions" below):
+
+```bash
+npm run functions:check                 # deno check; the only type check they get
+npx supabase functions serve --env-file tests/fixtures/functions.env   # serve with the test fixture
+set -a; . tests/fixtures/functions.env; set +a; npx vitest run tests/functions   # HTTP suite
+```
+
+Only `tests/logic/` and `tests/lib/` run without the local stack; `tests/rpc/` and `tests/rls/` need it,
+and `tests/functions/` also needs the functions served as above — it **skips itself** unless
+`FUNCTIONS_URL` and the fixture's `PADDLE_WEBHOOK_SECRET` are both in the environment, so a plain
+`npm test` stays green without them. CI serves them and loads the fixture on every run.
+
+**If a served function answers `503 BOOT_ERROR`**, read the serve log: on a machine behind a
+TLS-intercepting proxy or antivirus (this owner's has Avast's HTTPS scanning), the edge-runtime
+container rejects the re-signed certificate (`invalid peer certificate: UnknownIssuer`) while fetching
+the functions' `npm:` packages, and it ignores `DENO_CERT`. What works: run `npm run functions:check`
+on the host (whose Deno trusts the system store) and copy its npm cache into the runtime's cache
+volume —
+`docker run --rm -v supabase_edge_runtime_badminton-queueing-app:/deno-dir -v "%LOCALAPPDATA%\deno\npm:/src:ro" alpine cp -r /src/registry.npmjs.org /deno-dir/npm/`
+— then serve again. Local only; CI and production fetch directly.
+
 CI ([.github/workflows/test.yml](.github/workflows/test.yml)) boots the stack on a **pinned** CLI
 (3.3.0) and writes `.env.test` with the same `supabase status -o env > .env.test` a local run uses.
 It used to append that output to `$GITHUB_ENV` instead, which keeps the CLI's quotes — `API_URL`
@@ -65,14 +86,20 @@ That's usually enough. `npx vitest run <one file>` narrows further if it isn't.
 
 ## Architecture
 
-### Two containment modules
+### Containment modules
 
 Everything that touches the database goes through [app/lib/sessionStore.ts](app/lib/sessionStore.ts);
 everything that touches Supabase Auth goes through [app/lib/auth.ts](app/lib/auth.ts). No component,
 hook, or page calls `supabase.*` directly. Preserve this — a new feature that needs data adds a
-function to `sessionStore`, it does not import the client.
+function to `sessionStore`, it does not import the client. That includes the Edge Functions: the
+browser reaches them only through `sessionStore.createCheckout` / `syncPurchase`
+(`supabase.functions.invoke`).
 
-Layering: pages/components → [useSession](app/hooks/useSession.ts) / [useAuth](app/hooks/useAuth.ts) → `sessionStore` / `auth` → Supabase.
+Phase 3c added a third: [app/lib/paddle.ts](app/lib/paddle.ts) is the only importer of
+`@paddle/paddle-js`. It runs the checkout overlay and localizes the price, and that is all it is
+trusted with — what is *sold* is decided server-side (see "Purchases" below).
+
+Layering: pages/components → [useSession](app/hooks/useSession.ts) / [useAuth](app/hooks/useAuth.ts) / [usePurchase](app/hooks/usePurchase.ts) → `sessionStore` / `auth` / `paddle` → Supabase / Paddle.
 
 ### The data model is players-only
 
@@ -222,6 +249,72 @@ redirect loop); and **if writing the ticket fails, do not sign in** — that dis
 no way back. Orchestration lives in [useAuth](app/hooks/useAuth.ts), not `auth.ts`, because it needs
 both containment modules and `sessionStore` already imports `auth` (the reverse would be a cycle).
 
+### Purchases: Pro is derived, and one function decides
+
+Paddle is the merchant of record. `plan = 'pro'` is **never set directly**: it is recomputed after
+every event as "this account holds at least one `purchases` row that is `completed`". That is what
+lets out-of-order delivery, buying twice and partial refunds need no special cases — there is no
+"turn Pro off" event that can overtake the "turn it on" one. A plan written by hand into
+`entitlements` is overwritten by the next event for that account.
+
+Every path to a plan change goes through **`apply_paddle_event(p_event, p_price_id)`**
+([supabase/migrations/20261124112531_phase3c_purchases.sql](supabase/migrations/20261124112531_phase3c_purchases.sql)):
+the webhook, and "Verify purchase" (which wraps an API transaction as a made-up
+`sync:<txn>:<updated_at>` event). It is `SECURITY INVOKER` and callable by `service_role` alone.
+Rules a change must keep:
+
+- **Dedupe on Paddle's `event_id`.** Step 1 upserts the raw payload into `webhook_events`
+  (`attempts + 1` on conflict); an event with `processed_at` set returns `duplicate`. Two copies
+  arriving at once serialize on that row.
+- **A failed event stays unprocessed.** Step 2 runs in an inner `BEGIN … EXCEPTION`: on failure the
+  effects roll back but the payload and `sqlstate: message` are kept, `processed_at` stays null, and
+  the webhook answers 500 — so Paddle's retry (60 over ~2 days live, 3 over ~2 min in the sandbox)
+  runs it again. Marking a failure processed would turn every retry into a silent `duplicate`.
+- **Order by `occurred_at`, never by delivery.** An event older than its purchase's `last_event_at`
+  is `stale` and changes nothing. A refund for a transaction never seen **fails** (P0002) rather than
+  being ignored: the likeliest cause is that its `transaction.completed` hasn't arrived yet.
+- **"Ours"** = sells `p_price_id` **or** create-checkout already wrote a pending row for it. The price
+  is a parameter (it differs between sandbox and live and lives with the functions' secrets); the
+  pending-row arm keeps a checkout opened just before a price change from being ignored after the
+  customer paid.
+- **The refund policy is one condition**: only an *approved, full* refund / chargeback /
+  chargeback_reverse changes anything. Pending, rejected and partial adjustments, credits and
+  chargeback warnings are `ignored`. Nothing is taken from rooms — grandfathering, as in 3a.
+- **Open rooms learn by being touched.** When the plan moves, the same transaction bumps
+  `updated_at` on the owner's rooms; `sessions` is already published, so every open device reloads
+  its limits — the courtside tablet included, which isn't the owner and could never read
+  `entitlements`. Touch only on a real change, or every replay reloads every room.
+- `enforce_pro_requires_account` is still the last line: an anonymous buyer makes the entitlements
+  write raise 23514, which lands as `failed` with the payload kept.
+
+The buyer's side ([usePurchase](app/hooks/usePurchase.ts) → [lib/purchase.ts](app/lib/purchase.ts),
+unit-tested): sign in → `createCheckout` → Paddle overlay → poll `my_limits()` ~1/s for 30 s → one
+`syncPurchase` → otherwise "payment received, Pro is on its way". create-checkout's 409s
+`already_pro` / `payment_processing` are good news — it reconciles pending purchases with Paddle
+before creating a new transaction, which is what stops a late webhook from becoming a double charge.
+
+### Edge Functions
+
+[supabase/functions/](supabase/functions/) holds `paddle-webhook` (`verify_jwt = false` in
+config.toml — the Paddle-Signature HMAC is its authentication), `create-checkout` and
+`sync-purchase`. **The request logic is pure TypeScript in `_shared/`** (`webhook.ts`,
+`checkout.ts`, `sync.ts`, `paddleApi.ts`, `paddleSignature.ts`, `paddleEvents.ts`, `http.ts`) taking
+its database, Paddle and reporter as arguments, so vitest drives it with recorders
+(`tests/logic/`). Only `runtime.ts`, `sentry.ts` and the `index.ts` entries touch `Deno.*` or `npm:`
+— keep it that way, or vitest can't import the logic.
+
+`supabase/functions/` is excluded from the root tsconfig and ESLint; `npm run functions:check`
+(`deno check`) is its type check, and CI runs it. Pin `npm:` versions exactly. Deno 2.9 refuses a
+package published less than 24 h ago (`@sentry/deno` 11.17.0 was, so 11.16.0 is pinned) — pick an
+older release rather than disabling that guard.
+
+Secrets (`PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_PRICE_ID`, `SENTRY_DSN`)
+are set by hand with `supabase secrets set`; no build pushes them
+([supabase/functions/.env.example](supabase/functions/.env.example)). `PADDLE_ENV` has **no default**
+and must match the key's `_sdbx_`/`_live_` marker — misconfigured money fails loudly. Sentry is
+Edge-Functions-only (app-wide monitoring is Phase 5): default integrations off, tags inside
+`withScope`, `flush` before every response, a no-op without a DSN.
+
 ### Pure logic stays pure
 
 [app/lib/logic.ts](app/lib/logic.ts) is DB-agnostic and unit-tested. In `pickFourPlayers` the order of
@@ -232,7 +325,16 @@ the list still runs fewest-games-first. Don't "simplify" that into one comparato
 
 Timestamped SQL in `supabase/migrations/`, applied locally by `npm run db:reset` and auto-pushed on
 Vercel **production** builds only ([scripts/vercel-migrate.mjs](scripts/vercel-migrate.mjs), gated on
-`VERCEL_ENV`). A failed migration aborts the build.
+`VERCEL_ENV`). The same step then deploys the Edge Functions (`functions deploy --use-api` — the
+build has no Docker). A failure in either aborts the build, so database, functions and app ship
+together, in that order. It needs `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` and
+`SUPABASE_PROJECT_REF` in Vercel's Production scope, and refuses to run without all three.
+
+The script pins the CLI (`SUPABASE_CLI`) to **the same exact version as CI**, and
+`tests/lib/vercel_migrate.test.ts` fails if the two drift — bump them together. Unpinned, a deploy of
+unchanged code picks up whatever CLI is newest that day: 3.x deprecates `db push --db-url` and 4.x
+removes it. Both commands pass the CLI's own `--yes` (besides npx's): 3.x accepts only that, or
+`SUPABASE_YES`, as confirmation for a change to a hosted project.
 
 Write every migration to be safely re-runnable (`if not exists`, `drop policy if exists`, `do $$` blocks
 for publication changes) — they get replayed against fresh stacks constantly.
@@ -244,8 +346,8 @@ A new table needs three things:
 2. added to the `supabase_realtime` publication.
 3. its grants thought about — see below.
 
-Skip 1 and 2 when nothing subscribes to the table; `entitlements` and `room_claims` both do, each
-saying so in a comment.
+Skip 1 and 2 when nothing subscribes to the table; `entitlements`, `room_claims`, `purchases` and
+`webhook_events` all do, each saying so in a comment.
 
 **On grants, a new table is born wide open, not locked down.** `pg_default_acl` carries
 `alter default privileges in schema public grant all on tables to anon, authenticated, service_role`
@@ -271,14 +373,29 @@ role may call needs `revoke execute on function … from public, anon, authentic
 
 The consequence is sharp: **a narrow column `grant` restricts nothing unless you `revoke` first.**
 `revoke all on <table> from anon, authenticated;` *then* `grant insert (…)`. Phase 2 does this for
-`sessions`, Phase 3b for `room_claims`. Revoking also makes refusals honest — with no grant PostgREST
-raises 42501, where RLS-with-no-policy silently matches zero rows.
+`sessions`, Phase 3b for `room_claims`, Phase 3c for `purchases` and `webhook_events`. Revoking also
+makes refusals honest — with no grant PostgREST raises 42501, where RLS-with-no-policy silently
+matches zero rows.
+
+When testing a revoke, assert the *message*, not just 42501 — layered grants can refuse for the wrong
+reason. `apply_paddle_event`'s caller test first passed with EXECUTE deliberately re-granted to
+anon, because the INVOKER function then died 42501 one layer down on the revoked `webhook_events`;
+only matching `function apply_paddle_event` in the message pins the gate it is about.
 
 ## Tests
 
-- `tests/logic/`, `tests/lib/` — pure unit tests, no DB.
+- `tests/logic/`, `tests/lib/` — pure unit tests, no DB. Includes the Edge Functions' `_shared/`
+  logic, imported straight from `supabase/functions/`.
 - `tests/rpc/` — RPC behavior, called through the anon client so the real RLS path is exercised.
+  `apply_paddle_event` is the exception, called as service_role — the webhook's own position.
 - `tests/rls/` — policy enforcement (ownership, locking, column grants).
+- `tests/functions/` — the Edge Functions over real HTTP, through the local gateway and edge
+  runtime. Skipped unless served (see Commands); CI serves them.
+
+Paddle payloads are built from the sandbox-shaped fixtures in `tests/fixtures/paddle/` by
+[tests/helpers/paddle.ts](tests/helpers/paddle.ts), which stamps a fresh event id on every call — a
+replay has to be asked for by passing the same event back. `tests/fixtures/functions.env` holds the
+dummy secrets the functions are served with; none of them is a credential.
 
 Environment is `node`, not jsdom — there are no component tests, and adding one means adding a DOM
 environment first.

@@ -21,8 +21,9 @@ import { cn } from "../lib/cn";
 // BatchAddModal and "My rooms" all funnel through here, so no props are threaded
 // through three components and the four call sites cannot drift apart.
 //
-// Worded as keeping her rooms rather than as upgrading, because Pro is not on
-// sale until Phase 3c — and keeping them is a real thing signing in does today.
+// Worded as keeping her rooms rather than as upgrading: keeping them is the
+// first thing signing in does, and only a signed-in account can then buy Pro on
+// /pricing (Phase 3c).
 //
 // Cost accepted: each rendered note mounts its own `useAuth` and so resolves its
 // own `getUser()`. A note only renders when a gate is actually showing, so it is

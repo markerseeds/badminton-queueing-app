@@ -242,6 +242,154 @@ export async function roomsOwnedBy(
   return (data ?? []).map((r) => r.id as string);
 }
 
+// ---------- Phase 3c: purchases and webhook events ----------
+
+export type PurchaseRow = {
+  id: string;
+  user_id: string | null;
+  provider_transaction_id: string;
+  provider_customer_id: string | null;
+  price_id: string | null;
+  status: "pending" | "completed" | "refunded" | "chargeback";
+  currency_code: string | null;
+  subtotal: number | null;
+  tax: number | null;
+  total: number | null;
+  created_at: string;
+  completed_at: string | null;
+  revoked_at: string | null;
+  last_event_at: string | null;
+};
+
+export type WebhookEventRow = {
+  event_id: string;
+  event_type: string;
+  occurred_at: string | null;
+  payload: unknown;
+  received_at: string;
+  attempts: number;
+  processed_at: string | null;
+  outcome: string | null;
+  error: string | null;
+};
+
+// The shape apply_paddle_event() hands back to the webhook.
+export type ApplyResult = {
+  outcome: "applied" | "duplicate" | "ignored" | "stale" | "failed";
+  event_id: string;
+  transaction_id?: string | null;
+  user_id?: string | null;
+  plan?: "free" | "pro" | null;
+  plan_changed?: boolean;
+  sqlstate?: string;
+  error?: string;
+};
+
+export async function getPurchase(
+  svc: SupabaseClient,
+  transactionId: string,
+): Promise<PurchaseRow | null> {
+  const { data, error } = await svc
+    .from("purchases")
+    .select("*")
+    .eq("provider_transaction_id", transactionId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as PurchaseRow | null;
+}
+
+export async function countPurchases(
+  svc: SupabaseClient,
+  transactionId: string,
+): Promise<number> {
+  const { count, error } = await svc
+    .from("purchases")
+    .select("id", { count: "exact", head: true })
+    .eq("provider_transaction_id", transactionId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// What create-checkout writes before handing the transaction to Paddle.js.
+export async function seedPurchase(
+  svc: SupabaseClient,
+  row: {
+    userId: string | null;
+    transactionId: string;
+    status?: PurchaseRow["status"];
+    priceId?: string;
+    completedAt?: string;
+  },
+): Promise<void> {
+  const { error } = await svc.from("purchases").insert({
+    user_id: row.userId,
+    provider_transaction_id: row.transactionId,
+    provider_customer_id: "ctm_test_seeded",
+    price_id: row.priceId ?? "pri_01jh8sx0pro0un1ock0one0time",
+    status: row.status ?? "pending",
+    completed_at: row.completedAt ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function getWebhookEvent(
+  svc: SupabaseClient,
+  eventId: string,
+): Promise<WebhookEventRow | null> {
+  const { data, error } = await svc
+    .from("webhook_events")
+    .select("*")
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as WebhookEventRow | null;
+}
+
+export async function getEntitlement(svc: SupabaseClient, userId: string) {
+  const { data, error } = await svc
+    .from("entitlements")
+    .select("plan, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { plan: "free" | "pro"; updated_at: string } | null;
+}
+
+export async function accountPlan(
+  svc: SupabaseClient,
+  userId: string,
+): Promise<"free" | "pro"> {
+  const { data, error } = await svc.rpc("account_plan", { p_user_id: userId });
+  if (error) throw error;
+  return data as "free" | "pro";
+}
+
+// Neither table cascades from anything a test deletes — purchases outlive their
+// account on purpose (user_id is ON DELETE SET NULL) — so tests clean up by id.
+export async function deletePurchases(
+  svc: SupabaseClient,
+  transactionIds: string[],
+): Promise<void> {
+  if (transactionIds.length === 0) return;
+  const { error } = await svc
+    .from("purchases")
+    .delete()
+    .in("provider_transaction_id", transactionIds);
+  if (error) throw error;
+}
+
+export async function deleteWebhookEvents(
+  svc: SupabaseClient,
+  eventIds: string[],
+): Promise<void> {
+  if (eventIds.length === 0) return;
+  const { error } = await svc
+    .from("webhook_events")
+    .delete()
+    .in("event_id", eventIds);
+  if (error) throw error;
+}
+
 // Deleting the session cascades to its players (ON DELETE CASCADE).
 export async function deleteSession(
   svc: SupabaseClient,

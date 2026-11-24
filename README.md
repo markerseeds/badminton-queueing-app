@@ -20,12 +20,17 @@ https://badminton-queueing-app.vercel.app/
   everything you've made. Sign in with Google to keep them across devices.
 - **Room lock** — rooms are open by default so the courtside tablet and co-organizers can all edit;
   the owner can lock a room to restrict editing to themselves.
+- **Free and Pro** — free rooms get 2 courts and 10 players, and an account keeps 2 saved rooms;
+  Pro, a one-time purchase through Paddle, lifts that to 6 courts and unlimited players and rooms.
+  The limits are enforced in Postgres, not in the browser.
 
 ## Tech stack
 
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
 - [Tailwind CSS](https://tailwindcss.com) v4
-- [Supabase](https://supabase.com) — Postgres, Realtime, and Row-Level Security
+- [Supabase](https://supabase.com) — Postgres, Realtime, Row-Level Security, Auth and Edge Functions
+- [Paddle](https://www.paddle.com) — checkout and payments, as merchant of record
+- [Sentry](https://sentry.io) — error reports from the payment Edge Functions
 
 ## Getting started
 
@@ -62,7 +67,16 @@ https://badminton-queueing-app.vercel.app/
    `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET` and flip
    `[auth.external.google] enabled = true` to test Google locally.
 
-4. **Run the dev server**
+4. **Checkout (optional)**
+
+   Without the three `NEXT_PUBLIC_PADDLE_*` variables in `.env.local` the
+   pricing page says "Checkout unavailable" and everything else works. To try
+   checkout against Paddle's sandbox, set them (see `.env.local.example`), give
+   the Edge Functions their secrets in `supabase/functions/.env` (see
+   `supabase/functions/.env.example`), and serve them with
+   `npx supabase functions serve`.
+
+5. **Run the dev server**
 
    ```bash
    npm run dev
@@ -83,6 +97,7 @@ https://badminton-queueing-app.vercel.app/
 | `npm run db:start`  | Start the local Supabase stack (Docker) |
 | `npm run db:reset`  | Re-apply all migrations locally         |
 | `npm run db:stop`   | Stop the local Supabase stack           |
+| `npm run functions:check` | Type-check the Edge Functions (Deno) |
 
 The RLS and RPC tests run against the local stack. Start it, then write the
 connection details the tests read:
@@ -92,6 +107,26 @@ npm run db:start
 npx supabase status -o env > .env.test
 npm test
 ```
+
+The Edge Function HTTP tests (`tests/functions/`) skip themselves unless the
+functions are being served with the test fixture, and that fixture is loaded
+into the test run:
+
+```bash
+npx supabase functions serve --env-file tests/fixtures/functions.env   # in one terminal
+set -a; . tests/fixtures/functions.env; set +a; npm test              # in another
+```
+
+CI does both on every push.
+
+## Deploying
+
+Pushing `main` deploys production on Vercel, and the production build applies
+pending migrations and deploys the Edge Functions first
+([scripts/vercel-migrate.mjs](scripts/vercel-migrate.mjs)). Previews do neither.
+It needs `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`
+in Vercel's Production environment; the functions' own secrets are set once,
+by hand, with `supabase secrets set` and are never pushed by a build.
 
 ## Roadmap
 
