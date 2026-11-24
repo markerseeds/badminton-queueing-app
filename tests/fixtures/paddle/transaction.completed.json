@@ -1,0 +1,141 @@
+{
+  "event_id": "evt_01jh8v3k2m4n5p6q7r8s9t0vwx",
+  "event_type": "transaction.completed",
+  "occurred_at": "2026-11-24T08:15:45.366122Z",
+  "notification_id": "ntf_01jh8v3k2q8r9s0t1v2w3x4y5z",
+  "data": {
+    "id": "txn_01jh8tzx9kq2w3e4r5t6y7u8i9",
+    "items": [
+      {
+        "price": {
+          "id": "pri_01jh8sx0pro0un1ock0one0time",
+          "name": "Pro unlock",
+          "type": "standard",
+          "status": "active",
+          "quantity": { "maximum": 1, "minimum": 1 },
+          "tax_mode": "account_setting",
+          "created_at": "2026-11-20T10:00:00.000000Z",
+          "product_id": "pro_01jh8sw9badm1nt0nqueue0pro",
+          "unit_price": { "amount": "3000", "currency_code": "USD" },
+          "updated_at": "2026-11-20T10:00:00.000000Z",
+          "custom_data": null,
+          "description": "Pro, one-time unlock",
+          "trial_period": null,
+          "billing_cycle": null,
+          "unit_price_overrides": []
+        },
+        "quantity": 1,
+        "proration": null
+      }
+    ],
+    "origin": "web",
+    "status": "completed",
+    "details": {
+      "totals": {
+        "fee": "200",
+        "tax": "500",
+        "total": "3000",
+        "credit": "0",
+        "balance": "0",
+        "discount": "0",
+        "earnings": "2300",
+        "subtotal": "2500",
+        "grand_total": "3000",
+        "grand_total_tax": "500",
+        "currency_code": "USD",
+        "credit_to_balance": "0"
+      },
+      "line_items": [
+        {
+          "id": "txnitm_01jh8tzxa1b2c3d4e5f6g7h8j9",
+          "totals": { "tax": "500", "total": "3000", "discount": "0", "subtotal": "2500" },
+          "item_id": null,
+          "product": {
+            "id": "pro_01jh8sw9badm1nt0nqueue0pro",
+            "name": "Badminton Queue Pro",
+            "type": "standard",
+            "status": "active",
+            "image_url": null,
+            "created_at": "2026-11-20T10:00:00.000000Z",
+            "updated_at": "2026-11-20T10:00:00.000000Z",
+            "custom_data": null,
+            "description": "Up to 6 courts, unlimited players and saved rooms.",
+            "tax_category": "standard"
+          },
+          "price_id": "pri_01jh8sx0pro0un1ock0one0time",
+          "quantity": 1,
+          "tax_rate": "0.2",
+          "unit_totals": { "tax": "500", "total": "3000", "discount": "0", "subtotal": "2500" },
+          "is_tax_exempt": false,
+          "revised_tax_exempted": false
+        }
+      ],
+      "payout_totals": {
+        "fee": "200",
+        "tax": "500",
+        "total": "3000",
+        "credit": "0",
+        "balance": "0",
+        "discount": "0",
+        "earnings": "2300",
+        "fee_rate": "0.05",
+        "subtotal": "2500",
+        "grand_total": "3000",
+        "currency_code": "USD",
+        "exchange_rate": "1",
+        "credit_to_balance": "0"
+      },
+      "tax_rates_used": [
+        { "totals": { "tax": "500", "total": "3000", "discount": "0", "subtotal": "2500" }, "tax_rate": "0.2" }
+      ],
+      "adjusted_totals": {
+        "fee": "200",
+        "tax": "500",
+        "total": "3000",
+        "earnings": "2300",
+        "subtotal": "2500",
+        "grand_total": "3000",
+        "retained_fee": "0",
+        "currency_code": "USD"
+      }
+    },
+    "checkout": {
+      "url": "https://badminton-queueing-app.vercel.app/pricing?_ptxn=txn_01jh8tzx9kq2w3e4r5t6y7u8i9"
+    },
+    "payments": [
+      {
+        "amount": "3000",
+        "status": "captured",
+        "created_at": "2026-11-24T08:15:37.093870Z",
+        "error_code": null,
+        "captured_at": "2026-11-24T08:15:43.792797Z",
+        "method_details": {
+          "card": { "type": "visa", "last4": "4242", "expiry_year": 2030, "expiry_month": 12, "cardholder_name": "Sandbox Buyer" },
+          "type": "card"
+        },
+        "payment_method_id": "paymtd_01jh8v3ab1cd2ef3gh4ij5kl6m",
+        "payment_attempt_id": "5c2c8a2e-7a51-4f0e-9a41-2b7f7b1c9d10",
+        "stored_payment_method_id": "8d1f2b54-0c1a-4b1e-8f2e-3a9c4d5e6f70"
+      }
+    ],
+    "billed_at": "2026-11-24T08:15:44.296865Z",
+    "address_id": "add_01jh8v2z3x4c5v6b7n8m9q0w1e",
+    "created_at": "2026-11-24T08:12:35.440187Z",
+    "invoice_id": "inv_01jh8v3m4n5b6v7c8x9z0a1s2d",
+    "revised_at": null,
+    "updated_at": "2026-11-24T08:15:45.112233Z",
+    "business_id": null,
+    "custom_data": {
+      "app": "badminton-queue",
+      "user_id": "00000000-0000-4000-8000-000000000000"
+    },
+    "customer_id": "ctm_01jh8v1q2w3e4r5t6y7u8i9o0p",
+    "discount_id": null,
+    "currency_code": "USD",
+    "billing_period": null,
+    "invoice_number": "325-10001",
+    "billing_details": null,
+    "collection_mode": "automatic",
+    "subscription_id": null
+  }
+}
