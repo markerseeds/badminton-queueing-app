@@ -82,6 +82,18 @@ export type LoadedSession = SessionState & {
   limits: SessionLimits;
 };
 
+// The signed-in account's purchases, as much of them as the pricing page needs.
+// Read from `purchases` under an owner-only policy; the plan itself still comes
+// from my_limits(), which is what every gate consults.
+export type MyPurchase = {
+  // When the account's first completed purchase completed — "You have Pro since
+  // …". Null until one has.
+  proSince: string | null;
+  // A checkout was started and Paddle hasn't reported back on it yet: exactly
+  // what Verify purchase goes looking for.
+  hasPending: boolean;
+};
+
 // A row in the "My rooms" list — enough to identify a room without loading it.
 export type RoomSummary = {
   id: string;

@@ -3,13 +3,15 @@
 // directly. Assembles the relational rows back into the in-memory SessionState
 // shape the UI renders from.
 
-import { ensureUser } from "./auth";
+import { ensureUser, getUser } from "./auth";
 import { DEFAULT_COURTS } from "./constants";
+import { functionErrorFrom } from "./functionError";
 import { supabase } from "./supabase";
 import type {
   AccountLimits,
   CourtGame,
   LoadedSession,
+  MyPurchase,
   NewPlayer,
   PlanName,
   Player,
@@ -228,6 +230,65 @@ export async function getMyLimits(): Promise<AccountLimits | null> {
     maxCourts: row.max_courts,
     maxPlayers: row.max_players,
     maxRooms: row.max_rooms ?? 0,
+  };
+}
+
+// ---------- purchases (Phase 3c) ----------
+// Both of these go through Edge Functions rather than PostgREST, because both
+// need Paddle's secret API key. supabase-js attaches the signed-in user's token,
+// and the functions re-read the account from auth.users — so an anonymous or
+// already-Pro account is refused server-side whatever this page believes.
+//
+// Refusals come back with a `code` (see functionError.ts): `already_pro` and
+// `payment_processing` are good news, and purchase.ts treats them that way.
+
+export async function createCheckout(): Promise<{ transactionId: string }> {
+  const { data, error } = await supabase.functions.invoke("create-checkout", {
+    method: "POST",
+  });
+  if (error) {
+    throw await functionErrorFrom(error, "Couldn't start checkout. Please try again.");
+  }
+  return data as { transactionId: string };
+}
+
+// "Verify purchase": asks the server to check this account's pending checkouts
+// with Paddle and apply any that completed — the recovery path for a webhook
+// that never arrived.
+export async function syncPurchase(): Promise<{ plan: PlanName; processing: boolean }> {
+  const { data, error } = await supabase.functions.invoke("sync-purchase", {
+    method: "POST",
+  });
+  if (error) {
+    throw await functionErrorFrom(
+      error,
+      "Couldn't check your purchase just now. Please try again.",
+    );
+  }
+  return data as { plan: PlanName; processing: boolean };
+}
+
+// Null when signed out: `purchases` isn't granted to anon at all, and there'd be
+// nothing to read. The owner-only SELECT policy is the real filter; the `.eq` is
+// there to say so, not to secure anything.
+export async function getMyPurchase(): Promise<MyPurchase | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("purchases")
+    .select("status, completed_at")
+    .eq("user_id", user.id);
+  if (error) throw error;
+
+  const rows = (data ?? []) as { status: string; completed_at: string | null }[];
+  const completed = rows
+    .filter((r) => r.status === "completed" && r.completed_at)
+    .map((r) => r.completed_at as string)
+    .sort();
+  return {
+    proSince: completed[0] ?? null,
+    hasPending: rows.some((r) => r.status === "pending"),
   };
 }
 

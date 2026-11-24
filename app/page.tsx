@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AccountBar } from "./components/AccountBar";
+import { SiteFooter } from "./components/SiteFooter";
 import { ShuttleIcon, WarningIcon } from "./components/icons";
 import { Button } from "./components/ui";
 import { createSession } from "./lib/sessionStore";
@@ -122,6 +123,8 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      <SiteFooter />
     </div>
   );
 }
