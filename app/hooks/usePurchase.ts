@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getLocalPrice, isCheckoutConfigured, openCheckout } from "../lib/paddle";
-import { runPurchase, type PurchaseStage } from "../lib/purchase";
+import { runPurchase, statusAfter, type PurchaseStage } from "../lib/purchase";
 import {
   createCheckout,
   getMyLimits,
@@ -103,13 +103,10 @@ export function usePurchase() {
         syncPurchase,
         onStage: setStatus,
       });
-      if (outcome === "signing-in") return; // the browser is on its way to Google
-      if (outcome === "closed") {
-        setStatus("idle");
-        return;
-      }
-      await refresh().catch(() => {});
-      setStatus(outcome === "pro" ? "pro" : "delayed");
+      if (outcome === "pro" || outcome === "delayed") await refresh().catch(() => {});
+      // "signing-in" usually means the browser is already on its way to
+      // Google — but not if the sign-in was refused, so it lands on idle too.
+      setStatus(statusAfter(outcome));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't start checkout. Please try again.");
       setStatus("idle");

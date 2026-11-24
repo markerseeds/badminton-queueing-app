@@ -4,7 +4,7 @@
 // stay runnable under vitest.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.110.0";
-import type { AuthUser } from "./http.ts";
+import { authUserFrom, type AuthUser } from "./http.ts";
 import type { ApplyResult } from "./webhook.ts";
 
 // Unset and empty mean the same thing: `supabase secrets set X=` leaves X empty.
@@ -68,14 +68,7 @@ export function getUserWith(db: SupabaseClient) {
       if (status === 401 || status === 403 || error.name === "AuthSessionMissingError") return null;
       throw error;
     }
-    const user = data.user;
-    if (!user) return null;
-    return {
-      id: user.id,
-      email: user.email ?? null,
-      emailVerified: Boolean(user.email_confirmed_at),
-      isAnonymous: Boolean(user.is_anonymous),
-    };
+    return data.user ? authUserFrom(data.user) : null;
   };
 }
 

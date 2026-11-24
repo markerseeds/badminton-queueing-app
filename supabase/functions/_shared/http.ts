@@ -39,3 +39,40 @@ export type AuthUser = {
   emailVerified: boolean;
   isAnonymous: boolean;
 };
+
+type GoTrueUser = {
+  id: string;
+  email?: string | null;
+  email_confirmed_at?: string | null;
+  is_anonymous?: boolean | null;
+  identities?: { provider?: string; identity_data?: Record<string, unknown> }[] | null;
+};
+
+// Reads the account out of GoTrue's user record. The email counts as verified
+// when GoTrue confirmed it, or when a linked identity's provider verified that
+// same address. The second arm is for this app's main path, an anonymous
+// account upgraded in place by linkIdentity: whether GoTrue stamps
+// email_confirmed_at on that upgrade isn't observable from the test suite, and
+// refusing those buyers would block the path Phase 3b built. identity_data is
+// written by GoTrue from the provider; unlike user_metadata, the user can't
+// edit it.
+export function authUserFrom(user: GoTrueUser): AuthUser {
+  const email = user.email || null;
+  const identityVerified = Boolean(
+    email &&
+      (user.identities ?? []).some((identity) => {
+        const data = identity.identity_data ?? {};
+        return (
+          data.email_verified === true &&
+          typeof data.email === "string" &&
+          data.email.toLowerCase() === email.toLowerCase()
+        );
+      }),
+  );
+  return {
+    id: user.id,
+    email,
+    emailVerified: Boolean(email && user.email_confirmed_at) || identityVerified,
+    isAnonymous: Boolean(user.is_anonymous),
+  };
+}

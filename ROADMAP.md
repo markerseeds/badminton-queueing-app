@@ -126,7 +126,7 @@ Grouped by severity. Locations reference the current `app/page.tsx` unless noted
 - **Dark-mode bug:** `globals.css` defined dark background vars, but `body` forced black text and cards were `bg-white` — broken in dark mode. **Resolved twice:** Phase 0 took the cheap option and deleted the dark vars; **Phase 2.6 (2026-09-11) built a real dark theme** off design tokens, following the OS.
 - **Accessibility:** emoji-as-icons, low-contrast text, missing `aria-label`s, unlabeled number input — **largely addressed 2026-07-06** (aria labels/roles, dialog semantics, disclosure menu, WCAG-AA contrast); **emoji-as-icons cleared 2026-09-11** (replaced by an inline SVG set), and the skill `<select>` became a labelled radio group. _Remaining before launch:_ full modal focus-trapping / return-focus.
 - **No landing / pricing pages** — **both now exist.** Phase 2.6 gave the landing route a real hero and value proposition; Phase 3a (2026-09-12) added `/pricing`, which reads its own numbers out of `plan_limits()` so it can't advertise a ceiling the server would refuse, and says plainly that Pro isn't purchasable yet. _Remaining:_ screenshots, FAQ, OG tags and a marketing surface beyond those two pages (Phase 4).
-- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** exist — a vitest suite of pure-logic, local-Supabase RPC/RLS and Edge Function HTTP tests, 279 as of 2026-11-24. **Correction:** the GitHub Actions workflow added on 2026-07-06 never passed once until 2026-11-24 — it handed the tests a quoted `API_URL` — so every earlier count here was measured locally only.)_
+- **No analytics, error monitoring, or PWA/offline** — all matter for a professional launch, especially offline resilience (courtside wifi is unreliable). **Error monitoring has moved up to Phase 3c**, ahead of the first sale: a webhook that 500s is a customer who paid and got nothing. _(Automated **tests + CI** exist — a vitest suite of pure-logic, local-Supabase RPC/RLS and Edge Function HTTP tests, 287 as of 2026-11-24. **Correction:** the GitHub Actions workflow added on 2026-07-06 never passed once until 2026-11-24 — it handed the tests a quoted `API_URL` — so every earlier count here was measured locally only.)_
 
 **Verification run:** `tsc --noEmit` passes clean; `eslint` reports only the one `useEffect`
 warning (M3); no security-rules file found; no `process.env` usage; `framer-motion` confirmed unused.
@@ -773,14 +773,14 @@ courtside tablet, which could never have read `entitlements`.
   had been paused or removed: its hostname returned NXDOMAIN, so `db push` couldn't connect. The
   live app can't reach its database either until it's back. The owner is restoring it.
 
-**TDD'd.** **279 tests pass**, up from 158. The new ones:
+**TDD'd.** **287 tests pass**, up from 158. The new ones:
 
 - 23 DB tests: `apply_paddle_event` and `purchases` RLS;
 - 18 for signatures and event parsing;
-- 39 for the function handlers;
+- 43 for the function handlers;
 - 11 over real HTTP against the local gateway and edge runtime;
 - 9 for the deploy script;
-- 21 for the buyer-side logic.
+- 25 for the buyer-side logic.
 
 The caller-refusal test first passed *for the wrong reason*, so it was tightened and re-proven against
 a deliberately re-granted build (see CLAUDE.md). `tsc` / `eslint` / `next build` / `deno check` are
@@ -1079,7 +1079,7 @@ Track choices here so the "why" isn't lost.
   - The first production deploy after the CI fix **failed** because the production Supabase project
     had been paused or removed (NXDOMAIN). The owner is restoring it.
 
-  **TDD'd:** 279 tests, up from 158, including 11 over real HTTP against the local edge runtime, and
+  **TDD'd:** 287 tests, up from 158, including 11 over real HTTP against the local edge runtime, and
   all of them run in CI. `tsc` / `eslint` / `next build` / `deno check` are clean, and the
   migration was applied twice.
 

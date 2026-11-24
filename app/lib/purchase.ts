@@ -142,3 +142,28 @@ export async function runPurchase(deps: PurchaseDeps): Promise<PurchaseOutcome> 
   }
   return "delayed";
 }
+
+// Which Paddle.js events end an open checkout, for paddle.ts. Kept here so it
+// is tested: `checkout.error` is easy to forget, and a promise that waits only
+// for completed/closed hangs forever when Paddle refuses to open a transaction
+// (an unapproved domain, a bad id) — which leaves the page stuck on "complete
+// your purchase". After completion nothing else matters; a declined card keeps
+// the overlay open for another try, so it settles nothing either.
+export function checkoutEventOutcome(
+  name: string | undefined,
+  completed: boolean,
+): "completed" | "closed" | "error" | null {
+  if (name === "checkout.completed") return "completed";
+  if (completed) return null;
+  if (name === "checkout.closed") return "closed";
+  if (name === "checkout.error") return "error";
+  return null;
+}
+
+// What the page shows once a tap of Buy has run its course. A sign-in that
+// returns without leaving the page (Google refused, storage blocked) lands
+// back on idle, so the button never stays disabled on "Starting checkout…".
+export function statusAfter(outcome: PurchaseOutcome): "idle" | "pro" | "delayed" {
+  if (outcome === "pro" || outcome === "delayed") return outcome;
+  return "idle";
+}

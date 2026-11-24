@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkoutEventOutcome,
   pollUntil,
   proCta,
   runPurchase,
+  statusAfter,
   type PurchaseDeps,
 } from "../../app/lib/purchase";
 
@@ -230,5 +232,40 @@ describe("runPurchase", () => {
       },
     });
     await expect(runPurchase(d)).rejects.toThrow("Sign in with Google first");
+  });
+});
+
+describe("checkoutEventOutcome", () => {
+  // Which Paddle.js events end an open checkout. `checkout.error` is the one
+  // that was missing: a transaction Paddle won't open (an unapproved domain, a
+  // bad id) emits it and nothing else, and a promise waiting only for
+  // completed/closed would leave the page stuck on "complete your purchase".
+  it("settles on completion, on closing unpaid, and on a checkout error", () => {
+    expect(checkoutEventOutcome("checkout.completed", false)).toBe("completed");
+    expect(checkoutEventOutcome("checkout.closed", false)).toBe("closed");
+    expect(checkoutEventOutcome("checkout.error", false)).toBe("error");
+  });
+
+  it("ignores everything once the payment completed, and the noise before it", () => {
+    expect(checkoutEventOutcome("checkout.closed", true)).toBeNull();
+    expect(checkoutEventOutcome("checkout.error", true)).toBeNull();
+    // A declined card stays in the overlay for another try.
+    expect(checkoutEventOutcome("checkout.payment.failed", false)).toBeNull();
+    expect(checkoutEventOutcome("checkout.loaded", false)).toBeNull();
+    expect(checkoutEventOutcome(undefined, false)).toBeNull();
+  });
+});
+
+describe("statusAfter", () => {
+  // A sign-in that comes back without navigating (Google refused, storage
+  // blocked) must not leave the Buy button disabled on "Starting checkout…".
+  it("leaves the page idle after a sign-in attempt or a closed overlay", () => {
+    expect(statusAfter("signing-in")).toBe("idle");
+    expect(statusAfter("closed")).toBe("idle");
+  });
+
+  it("shows Pro, or that Pro is on its way", () => {
+    expect(statusAfter("pro")).toBe("pro");
+    expect(statusAfter("delayed")).toBe("delayed");
   });
 });

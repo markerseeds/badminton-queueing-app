@@ -12,12 +12,12 @@
 // checkout is simply unavailable rather than broken.
 
 import {
-  CheckoutEventNames,
   initializePaddle,
   type Environments,
   type Paddle,
   type PaddleEventData,
 } from "@paddle/paddle-js";
+import { checkoutEventOutcome } from "./purchase";
 
 // Referenced literally so Next inlines them into the browser bundle.
 const environment = process.env.NEXT_PUBLIC_PADDLE_ENV;
@@ -65,18 +65,24 @@ function paddle(): Promise<Paddle> {
 // Opens Paddle's overlay on a transaction create-checkout made, and settles as
 // soon as Paddle reports the payment complete — while its own success screen is
 // still up, so the page can start confirming the plan behind it. Settles
-// "closed" if the buyer closes the overlay without paying.
+// "closed" if the buyer closes the overlay without paying, and rejects if
+// Paddle refuses to open the transaction at all (see checkoutEventOutcome).
 export async function openCheckout(transactionId: string): Promise<"completed" | "closed"> {
   const instance = await paddle();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let completed = false;
     listener = (event) => {
-      if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) {
+      const outcome = checkoutEventOutcome(event.name, completed);
+      if (outcome === "completed") {
         completed = true;
         resolve("completed");
-      } else if (event.name === CheckoutEventNames.CHECKOUT_CLOSED && !completed) {
+      } else if (outcome === "closed") {
         listener = null;
         resolve("closed");
+      } else if (outcome === "error") {
+        listener = null;
+        instance.Checkout.close();
+        reject(new Error(event.detail || "The payment form couldn't open. Please try again."));
       }
     };
     instance.Checkout.open({
