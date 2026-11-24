@@ -12,7 +12,7 @@
     "db:start": "npx supabase start",
     "db:stop": "npx supabase stop",
     "db:reset": "npx supabase db reset",
-    "functions:check": "npx --yes deno@2.9.6 check supabase/functions"
+    "functions:check": "npx --yes deno@2.9.6 check --node-modules-dir=none --no-lock supabase/functions"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

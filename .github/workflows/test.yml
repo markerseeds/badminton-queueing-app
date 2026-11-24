@@ -31,9 +31,35 @@ jobs:
         with:
           version: 3.3.0
 
+      # The Edge Functions are Deno, excluded from tsc and ESLint, so this is the
+      # only type check they get. Cheap, and it fails before Docker boots.
+      - name: Type-check Edge Functions
+        run: npm run functions:check
+
       # Boots a full local stack in Docker and applies supabase/migrations/*.
       - name: Start Supabase
         run: supabase start
+
+      # Serves supabase/functions with the fixture's dummy Paddle values so the
+      # HTTP suite (tests/functions/) runs against the real gateway and edge
+      # runtime. Backgrounded — it serves until the job ends — and the next step
+      # waits for the webhook to answer, since the first request boots the
+      # worker and fetches its npm packages.
+      - name: Serve Edge Functions
+        run: supabase functions serve --env-file tests/fixtures/functions.env > "$RUNNER_TEMP/functions.log" 2>&1 &
+
+      - name: Wait for Edge Functions
+        run: |
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              http://127.0.0.1:55321/functions/v1/paddle-webhook -d '{}' || true)
+            # 401: booted, and refused an unsigned request — as it should.
+            if [ "$code" = "401" ]; then exit 0; fi
+            sleep 2
+          done
+          echo "paddle-webhook never answered 401 (last: $code)"
+          cat "$RUNNER_TEMP/functions.log"
+          exit 1
 
       # Written to the file tests/setup.ts loads — the same command as a local
       # run — and NOT appended to $GITHUB_ENV. The CLI quotes every value, and
@@ -45,8 +71,19 @@ jobs:
       - name: Write Supabase env for the tests
         run: supabase status -o env > .env.test
 
+      # The fixture is loaded into the test process too, so the HTTP suite signs
+      # deliveries with the same secret the function was served with; without
+      # it those suites skip themselves.
       - name: Run tests
-        run: npm test
+        run: |
+          set -a
+          . tests/fixtures/functions.env
+          set +a
+          npm test
+
+      - name: Edge Functions log
+        if: failure()
+        run: cat "$RUNNER_TEMP/functions.log" || true
 
       - name: Stop Supabase
         if: always()
