@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "db:start": "npx supabase start",
     "db:stop": "npx supabase stop",
-    "db:reset": "npx supabase db reset"
+    "db:reset": "npx supabase db reset",
+    "functions:check": "npx --yes deno@2.9.6 check supabase/functions"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
